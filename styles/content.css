@@ -1,0 +1,28 @@
+/* Styles for any injected elements */
+.x-analyzer-overlay {
+    position: fixed;
+    z-index: 9999;
+    background: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 10px;
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+.x-analyzer-highlight {
+    border: 2px solid #1DA1F2;
+    background-color: rgba(29, 161, 242, 0.1);
+    border-radius: 4px;
+}
+
+.x-analyzer-tooltip {
+    position: absolute;
+    background: white;
+    border: 1px solid #ccc;
+    padding: 8px;
+    border-radius: 4px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    font-size: 12px;
+    max-width: 200px;
+    z-index: 10000;
+}

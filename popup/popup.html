@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>X Profile Analyzer</title>
+  
+  <!-- CSS loading order - base styles first, then specifics -->
+  <link rel="stylesheet" href="../styles/popup.css">
+  <link rel="stylesheet" href="../styles/animations.css">
+  <link rel="stylesheet" href="../styles/icon-styles.css">
+  
+  <!-- Critical overrides for UI fixes -->
+  <style>
+    /* Critical overrides for UI fixes */
+    .primary-button, 
+    .secondary-button,
+    .action-button {
+      position: relative; /* For ripple effect */
+      overflow: hidden; /* For ripple containment */
+      cursor: pointer;
+      z-index: 1; /* Ensure clickable */
+    }
+
+    .primary-button:disabled, 
+    .secondary-button:disabled,
+    .action-button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    /* Fix loading state styling */
+    .loading-spinner {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-radius: 50%;
+      border-top-color: white;
+      animation: spin 0.8s linear infinite;
+      margin-right: 8px;
+      vertical-align: middle;
+    }
+
+    /* Fix tabs not switching */
+    .tab-content.active {
+      display: block !important;
+    }
+
+    /* Fix ripple effect */
+    .ripple {
+      position: absolute;
+      background-color: rgba(255, 255, 255, 0.3);
+      border-radius: 50%;
+      transform: scale(0);
+      animation: ripple 0.6s linear;
+      pointer-events: none;
+    }
+
+    /* Ensure consistent styling for buttons */
+    [data-theme="dark"] .primary-button {
+      background-color: #1d9bf0;
+      color: white;
+    }
+
+    /* Ensure toast container is visible */
+    .toast-container {
+      position: fixed;
+      bottom: 16px;
+      right: 16px;
+      z-index: 9999;
+    }
+
+    /* Fix any potential issue with loading overlay */
+    .loading-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 9998;
+      background-color: rgba(255, 255, 255, 0.9);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      transition: opacity 0.3s ease;
+    }
+    
+    .loading-overlay.hidden {
+      display: none !important;
+    }
+    
+    .loading-overlay.visible {
+      opacity: 1;
+    }
+    
+    .loading-content {
+      text-align: center;
+      padding: 20px;
+      border-radius: 8px;
+      background-color: rgba(29, 155, 240, 0.9);
+      color: white;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      max-width: 80%;
+    }
+    
+    .loading-text {
+      margin: 16px 0;
+      font-weight: 500;
+      transition: opacity 0.2s ease;
+    }
+    
+    .progress-container {
+      width: 100%;
+      margin-top: 10px;
+    }
+    
+    .progress-track {
+      width: 100%;
+      height: 4px;
+      background-color: rgba(255, 255, 255, 0.3);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    
+    .progress-fill {
+      height: 100%;
+      background-color: white;
+      border-radius: 2px;
+      width: 0%;
+      transition: width 0.3s ease;
+    }
+
+    [data-theme="dark"] .loading-overlay {
+      background-color: rgba(0, 0, 0, 0.85);
+    }
+    
+    /* Error display */
+    .error-box {
+      background-color: rgba(244, 33, 46, 0.1);
+      border: 1px solid #f4212e;
+      border-radius: 8px;
+      padding: 16px;
+      margin: 16px 0;
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+    }
+    
+    .error-message {
+      flex: 1;
+    }
+    
+    /* Pulse animation for buttons */
+    .pulse-animation {
+      animation: pulse 1.5s infinite;
+    }
+    
+    @keyframes pulse {
+      0% { opacity: 1; }
+      50% { opacity: 0.6; }
+      100% { opacity: 1; }
+    }
+    
+    /* Cancel button in loading overlay */
+    .cancel-analysis-button {
+      background-color: rgba(255, 255, 255, 0.2);
+      color: white;
+      border: 1px solid rgba(255, 255, 255, 0.5);
+      padding: 6px 16px;
+      margin-top: 12px;
+      border-radius: 20px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: background-color 0.2s;
+    }
+    
+    .cancel-analysis-button:hover {
+      background-color: rgba(255, 255, 255, 0.3);
+    }
+    
+    [data-theme="dark"] .cancel-analysis-button {
+      border-color: #fff;
+      color: #fff;
+    }
+    
+    [data-theme="light"] .cancel-analysis-button {
+      border-color: #1d9bf0;
+      color: #1d9bf0;
+    }
+    
+    /* Character counter */
+    .character-counter {
+      text-align: right;
+      font-size: 14px;
+      color: #536471;
+      margin-top: 4px;
+      transition: color 0.2s ease;
+    }
+    
+    .character-counter.warning {
+      color: #f4212e;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <div class="popup-container">
+    <!-- Header with logo, theme toggle and user profile -->
+    <header class="header-content">
+      <!-- X Home Button -->
+      <button class="home-button" title="Home - Refresh View" id="home-button">
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+          <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"></path>
+        </svg>
+        <span class="home-button-title">X Profile Analyzer</span>
+      </button>
+      
+      <!-- Sign In Button -->
+      <button class="sign-in-button" id="sign-in-button">
+        <svg class="x-icon" viewBox="0 0 24 24" width="16" height="16">
+          <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" fill="currentColor"/>
+        </svg>
+        <span>Sign in</span>
+      </button>
+    </header>
+
+    <!-- Tab Navigation -->
+    <div class="tab-navigation">
+      <button class="tab-button active" data-tab="analyze-tab">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+          <path d="M23 3a10.9 10.9 0 0 1-3.14 1.53 4.48 4.48 0 0 0-7.86 3v1A10.66 10.66 0 0 1 3 4s-4 9 5 13a11.64 11.64 0 0 1-7 2c9 5 20 0 20-11.5a4.5 4.5 0 0 0-.08-.83A7.72 7.72 0 0 0 23 3z"></path>
+        </svg>
+        Analyze
+      </button>
+      <button class="tab-button" data-tab="compose-tab">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+          <path d="M17 3a2.828 2.828 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path>
+        </svg>
+        Compose
+      </button>
+      <button class="tab-button" data-tab="history-tab">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+          <path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+        </svg>
+        History
+      </button>
+    </div>
+
+    <!-- Analyze Tab Content -->
+    <div class="tab-content active" id="analyze-tab">
+      <div class="url-input-section">
+        <label>Profile URL or @handle</label>
+        <div class="input-wrapper">
+          <span class="input-prefix">@</span>
+          <input type="text" id="profile-input" class="profile-input" placeholder="username" autocomplete="off">
+          <button id="clear-input" class="clear-input" style="display: none;">&times;</button>
+        </div>
+        <div class="input-wrapper">
+          <input type="text" id="post-url" class="post-input" placeholder="Post URL (optional)" autocomplete="off">
+        </div>
+      </div>
+      <button id="analyze-button" class="primary-button" disabled>
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="white" style="margin-right: 6px;">
+          <path d="M23 3a10.9 10.9 0 0 1-3.14 1.53 4.48 4.48 0 0 0-7.86 3v1A10.66 10.66 0 0 1 3 4s-4 9 5 13a11.64 11.64 0 0 1-7 2c9 5 20 0 20-11.5a4.5 4.5 0 0 0-.08-.83A7.72 7.72 0 0 0 23 3z"></path>
+        </svg>
+        Analyze Profile
+      </button>
+      
+      <div class="results-container" style="display: none;" id="results-container">
+        <!-- Results will be loaded here dynamically -->
+      </div>
+
+      <!-- Rate Limit Display -->
+      <div class="rate-limit-container">
+        <div class="rate-limit-progress">
+          <div id="rate-limit-bar" class="rate-limit-fill" style="width: 0%"></div>
+        </div>
+        <div class="rate-limit-text">
+          <span id="rate-limit-count">0/25</span> requests used
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="action-buttons">
+        <button id="retry-button" class="secondary-button">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" style="margin-right: 6px;">
+            <path d="M4.5 12c0-1.95.656-3.744 1.756-5.177l2.483 2.483 1.414-1.414-2.483-2.483C9.104 4.303 10.482 3.5 12 3.5c4.142 0 7.5 3.358 7.5 7.5s-3.358 7.5-7.5 7.5c-3.015 0-5.61-1.784-6.805-4.353l-1.79.895C5.044 18.313 8.27 20.5 12 20.5c4.97 0 9-4.03 9-9s-4.03-9-9-9c-2.208 0-4.228.797-5.795 2.113l-2.483-2.483-1.414 1.414 2.483 2.483C3.734 7.664 3 9.686 3 12c0 .51.058 1.007.168 1.486l1.843-.486C4.670 12.671 4.5 12.343 4.5 12z"/>
+          </svg>
+          Retry
+        </button>
+        <button id="clear-cache-button" class="secondary-button">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" style="margin-right: 6px;">
+            <path d="M16 6V4h-4V3H8v1H6v15h12V6h-2zm-1 13H7V6h2v1h4V6h2v13z"/>
+            <path d="M9.5 11h1v6h-1zm4 0h1v6h-1z"/>
+          </svg>
+          Clear Cache
+        </button>
+      </div>
+    </div>
+    
+    <!-- Compose Tab Content -->
+    <div class="tab-content" id="compose-tab">
+      <div class="post-composer">
+        <div class="compose-header">
+          <h3>Compose Post</h3>
+        </div>
+        
+        <div class="compose-body">
+          <textarea class="post-input" placeholder="What's happening?" maxlength="280"></textarea>
+          <div class="compose-tools">
+            <div class="media-buttons">
+              <button class="media-btn" title="Add Image">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                  <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14zm-5-7l-3 3.72L9 13l-3 4h12l-4-5z"/>
+                </svg>
+              </button>
+              <button class="media-btn" title="Add GIF">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                  <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-8.5 5.5h3v2h-3V11h2c.55 0 1 .45 1 1v2c0 .55-.45 1-1 1h-3c-.55 0-1-.45-1-1v-5c0-.55.45-1 1-1zm-5 0h3v2h-3V11h2c.55 0 1 .45 1 1v2c0 .55-.45 1-1 1h-3c-.55 0-1-.45-1-1v-5c0-.55.45-1 1-1z"/>
+                </svg>
+              </button>
+              <button class="media-btn" title="Add Poll">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                  <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM5 19V5h14v14H5zm5-7h5v2h-5v-2zm0-4h8v2h-8V8zm-3 8h2v-6H7v6z"/>
+                </svg>
+              </button>
+            </div>
+            <div class="character-counter">0/280</div>
+          </div>
+          <button class="primary-button post-now-button">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="white" style="margin-right: 6px;">
+              <path d="M23 3c-.9.65-1.9 1.16-3 1.5.79-.81 1.38-1.82 1.67-2.94-1.18.7-2.5 1.2-3.89 1.47C16.6 1.81 15.04 1 13.31 1c-3.33 0-6.03 2.7-6.03 6.03 0 .47.05.93.15 1.38C3.06 8.12 0 5.76 0 2.75c0 2.09 1.07 3.94 2.68 5.02-.98-.03-1.9-.3-2.7-.75v.08c0 2.92 2.08 5.36 4.83 5.92-.5.14-1.04.21-1.59.21-.39 0-.77-.04-1.14-.11.77 2.4 3 4.14 5.64 4.19-2.07 1.62-4.67 2.58-7.5 2.58-.49 0-.97-.03-1.44-.09 2.68 1.72 5.86 2.72 9.28 2.72 11.14 0 17.23-9.23 17.23-17.24 0-.26 0-.52-.02-.78 1.18-.85 2.21-1.92 3.01-3.13H23z"/>
+            </svg>
+            Post
+          </button>
+        </div>
+      </div>
+      
+      <div class="ai-generator">
+        <div class="form-group">
+          <label for="post-topic">Topic</label>
+          <input type="text" id="post-topic" class="input" placeholder="Enter topic for your post">
+        </div>
+        
+        <div class="form-group">
+          <label>Post Type</label>
+          <div class="type-selector">
+            <button class="type-btn active" data-type="engagement">Engagement</button>
+            <button class="type-btn" data-type="informative">Informative</button>
+            <button class="type-btn" data-type="promotional">Promotional</button>
+            <button class="type-btn" data-type="question">Question</button>
+          </div>
+        </div>
+        
+        <div class="form-group">
+          <label>Tone</label>
+          <div class="tone-selector">
+            <button class="tone-btn active" data-tone="professional">Professional</button>
+            <button class="tone-btn" data-tone="casual">Casual</button>
+            <button class="tone-btn" data-tone="humorous">Humorous</button>
+            <button class="tone-btn" data-tone="inspirational">Inspirational</button>
+          </div>
+        </div>
+        
+        <div class="form-group">
+          <label>Options</label>
+          <div class="options-group">
+            <div class="option-item">
+              <input type="checkbox" id="include-hashtags" checked>
+              <label for="include-hashtags">Include Hashtags</label>
+            </div>
+            <div class="option-item">
+              <input type="checkbox" id="include-emojis" checked>
+              <label for="include-emojis">Include Emojis</label>
+            </div>
+            <div class="option-item">
+              <input type="checkbox" id="include-cta">
+              <label for="include-cta">Include Call to Action</label>
+            </div>
+          </div>
+        </div>
+        
+        <button id="generate-post-btn" class="primary-button">Generate Post</button>
+      </div>
+      
+      <div class="generated-posts" id="generated-posts-container">
+        <!-- Generated posts will appear here -->
+      </div>
+    </div>
+
+    <!-- History Tab Content -->
+    <div class="tab-content" id="history-tab">
+      <div class="history-header">
+        <h3>Recent Analyses</h3>
+        <div class="history-actions">
+          <div class="input-wrapper">
+            <input type="text" id="history-search" class="search-input" placeholder="Search history">
+          </div>
+          <button id="clear-history-button" class="secondary-button">Clear All</button>
+        </div>
+      </div>
+      
+      <div class="history-list">
+        <div id="historyItemsContainer"></div>
+        <!-- History items will be loaded here -->
+        <div class="empty-state">
+          <svg class="empty-icon" viewBox="0 0 24 24">
+            <path d="M19.5 7h-15C3.12 7 2 8.12 2 9.5v10C2 20.88 3.12 22 4.5 22h15c1.38 0 2.5-1.12 2.5-2.5v-10C22 8.12 20.88 7 19.5 7zM4.5 9h15c.28 0 .5.22.5.5v1.5H4v-1.5c0-.28.22-.5.5-.5zm15 11h-15c-.28 0-.5-.22-.5-.5v-6.5h16v6.5c0 .28-.22.5-.5.5z" fill="currentColor"></path>
+            <path d="M7 5C7 3.9 7.9 3 9 3h6c1.1 0 2 .9 2 2v2H7V5z" fill="currentColor"></path>
+          </svg>
+          <h3>No History</h3>
+          <p>Analyzed profiles will appear here</p>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Loading Overlay -->
+    <div class="loading-overlay hidden">
+      <div class="loading-content">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">Analyzing...</div>
+        <div class="progress-container">
+          <div class="progress-track">
+            <div class="progress-fill"></div>
+          </div>
+        </div>
+        <button class="cancel-analysis-button" id="cancel-analysis-button">Cancel</button>
+      </div>
+    </div>
+
+    <!-- Toast Notifications Container -->
+    <div class="toast-container"></div>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <div class="status-indicator-container">
+        <span class="status-dot active"></span>
+        <span class="status-text">X Profile Analyzer v1.2.0</span>
+      </div>
+      <div class="footer-actions">
+        <button class="footer-button help-button" data-tooltip="Help">
+          <svg viewBox="0 0 24 24" width="20" height="20">
+            <path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9-4.03-9-9-9zm0 1c4.41 0 8 3.59 8 8s-3.59 8-8 8-8-3.59-8-8 3.59-8 8-8zm-1 3h2v2h-2V7zm3 10h-4v-1h1v-4h-1v-1h3v5h1v1z" fill="currentColor"></path>
+          </svg>
+        </button>
+        <button class="footer-button feedback-button" data-tooltip="Feedback">
+          <svg viewBox="0 0 24 24" width="20" height="20">
+            <path d="M12.29 8.71L9.7 11.3c-.39.39-.39 1.02 0 1.41l2.59 2.59c.63.63 1.71.18 1.71-.71V9.41c0-.89-1.08-1.33-1.71-.7z" fill="currentColor"></path>
+            <path d="M21 6h-4c0-2.21-1.79-4-4-4S9 3.79 9 6H5c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-9-2c1.1 0 2 .9 2 2h-4c0-1.1.9-2 2-2zm9 16H5V8h16v12z" fill="currentColor"></path>
+          </svg>
+        </button>
+        <button class="footer-button share-button" data-tooltip="Share">
+          <svg viewBox="0 0 24 24" width="20" height="20">
+            <path d="M12 2.59l5.7 5.7-1.41 1.42L13 6.41V16h-2V6.41l-3.3 3.3-1.41-1.42L12 2.59zM21 15l-.02 3.51c0 1.38-1.12 2.49-2.5 2.49H5.5C4.11 21 3 19.88 3 18.5V15h2v3.5c0 .28.22.5.5.5h12.98c.28 0 .5-.22.5-.5L19 15h2z" fill="currentColor"></path>
+          </svg>
+        </button>
+      </div>
+    </footer>
+  </div>
+
+  <!-- Debug Utility -->
+  <script>
+    // DOM Element Debugger to help diagnose missing elements
+    window.XAnalyzerDebugger = {
+      checkElements: function(selectors) {
+        console.log('[X-Analyzer Debug] Checking for required DOM elements...');
+        const missing = [];
+        const found = [];
+        
+        selectors.forEach(selector => {
+          const element = document.querySelector(selector);
+          if (!element) {
+            missing.push(selector);
+          } else {
+            found.push(selector);
+          }
+        });
+        
+        if (missing.length > 0) {
+          console.warn('[X-Analyzer Debug] Missing elements:', missing);
+        } else {
+          console.log('[X-Analyzer Debug] All elements found');
+        }
+        
+        return {missing, found};
+      },
+      
+      // Enhanced debugging for tab relationships
+      checkTabRelationships: function() {
+        console.log('[X-Analyzer Debug] Checking tab relationships...');
+        const tabButtons = document.querySelectorAll('.tab-button');
+        const issues = [];
+        
+        tabButtons.forEach(button => {
+          const tabName = button.getAttribute('data-tab');
+          const tabContent = document.getElementById(tabName);
+          
+          if (!tabContent) {
+            issues.push(`Tab content with ID "${tabName}" not found for tab button "${tabName}"`);
+          } else {
+            console.log(`[X-Analyzer Debug] Tab relationship verified: Button "${tabName}" -> Content #${tabName}`);
+          }
+        });
+        
+        if (issues.length > 0) {
+          console.error('[X-Analyzer Debug] Tab relationship issues found:', issues);
+        } else {
+          console.log('[X-Analyzer Debug] All tab relationships verified');
+        }
+        
+        return issues;
+      },
+      
+      // Check for event handler conflicts
+      monitorEventHandlers: function() {
+        const elements = [
+          {selector: '#analyze-button', name: 'Analyze Button'},
+          {selector: '.tab-button', name: 'Tab Buttons'},
+          {selector: '#clear-cache-button', name: 'Clear Cache Button'},
+          {selector: '.post-now-button', name: 'Post Button'},
+          {selector: '.home-button', name: 'Home Button'}
+        ];
+      }
+    };
+  </script>
+
+  <!-- Scripts -->
+  <script src="../scripts/interactionManager.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

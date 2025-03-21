@@ -1,0 +1,157 @@
+:root {
+  /* Extended X Brand Colors */
+  --x-black: #000000;
+  --x-blue: #1DA1F2;
+  --x-blue-dark: #1A91DA;
+  --x-gray: #657786;
+  --x-light-gray: #AAB8C2;
+  --x-hover-bg: rgba(29, 161, 242, 0.1);
+  --x-error: #E0245E;
+  --x-success: #17BF63;
+  
+  /* Enhanced Animation Timings */
+  --transition-speed: 0.2s;
+  --animation-duration: 2s;
+  --hover-scale: 1.05;
+}
+
+/* Enhanced Base Icon Styles */
+.x-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-speed) ease;
+  cursor: pointer;
+  position: relative;
+}
+
+/* Improved State Styles */
+.x-icon--default {
+  color: var(--x-black);
+}
+
+.x-icon--default:hover {
+  transform: scale(var(--hover-scale));
+  background-color: var(--x-hover-bg);
+}
+
+.x-icon--active {
+  color: var(--x-blue);
+  filter: drop-shadow(0 0 2px rgba(29, 161, 242, 0.3));
+}
+
+.x-icon--active:hover {
+  color: var(--x-blue-dark);
+  transform: scale(var(--hover-scale));
+}
+
+.x-icon--disabled {
+  color: var(--x-gray);
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.x-icon--error {
+  color: var(--x-error);
+  animation: shake 0.5s ease-in-out;
+}
+
+.x-icon--success {
+  color: var(--x-success);
+  animation: bounce 0.5s ease;
+}
+
+/* Enhanced Animations */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  75% { transform: translateX(5px); }
+}
+
+@keyframes bounce {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.2); }
+}
+
+/* Tooltip Styles */
+.x-icon-tooltip {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 8px;
+  background: rgba(0, 0, 0, 0.8);
+  color: white;
+  border-radius: 4px;
+  font-size: 12px;
+  opacity: 0;
+  transition: opacity 0.2s;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.x-icon:hover .x-icon-tooltip {
+  opacity: 1;
+}
+
+/* Animation classes */
+.x-icon--pulse {
+  animation: iconPulse var(--animation-duration) infinite;
+}
+
+.x-icon--rotate {
+  animation: iconRotate 1s ease;
+}
+
+/* Keyframe Animations */
+@keyframes iconPulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+@keyframes iconRotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* X Logo specific styling */
+.x-logo {
+  --x-primary: #000000;
+  --x-active: #1DA1F2;
+  --x-disabled: #657786;
+  --x-hover: rgba(29, 161, 242, 0.1);
+}
+
+.x-logo-default {
+  fill: var(--x-primary);
+  stroke: var(--x-primary);
+  stroke-width: 2;
+}
+
+.x-logo-active {
+  fill: var(--x-active);
+  stroke: var(--x-active);
+  filter: drop-shadow(0 0 4px rgba(29, 161, 242, 0.4));
+}
+
+.x-logo-disabled {
+  fill: var(--x-disabled);
+  stroke: var(--x-disabled);
+  opacity: 0.7;
+}
+
+/* Animation classes */
+.x-logo-animate {
+  transition: all 0.3s ease;
+}
+
+.x-logo-pulse {
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+} 
