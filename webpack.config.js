@@ -39,7 +39,14 @@ module.exports = {
 
   // Webpack plugins
   plugins: [
-    new Dotenv(), // Load environment variables from .env file
+    new Dotenv({
+      systemvars: true,     // Load all system environment variables as well
+      safe: true,           // Load '.env.example' to verify the '.env' variables
+      defaults: true,       // Load '.env.defaults' as the default values
+      expand: true,         // Allows your variables to expand inside of one another
+      ignoreStub: false,    // Set to true to avoid issues with the webpack-dev-server
+      path: './.env'        // Specify the path to your .env file
+    }),
     new CopyPlugin({
       patterns: [
         // Copy static assets to dist folder
@@ -47,7 +54,8 @@ module.exports = {
         { from: "popup/popup.html", to: "popup/popup.html" }, // Popup HTML
         { from: "popup/popup.css", to: "popup/popup.css" },  // Popup styles
         { from: "styles", to: "styles" },                    // Global styles
-        { from: "icons", to: "icons" }                       // Extension icons
+        { from: "icons", to: "icons" },                      // Extension icons
+        { from: ".env", to: ".env" }                         // Copy .env file for runtime access
       ],
     }),
   ],

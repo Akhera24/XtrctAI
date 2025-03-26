@@ -84,6 +84,7 @@ class InteractionManager {
 
         profileInput.addEventListener('keypress', (e) => {
           if (e.key === 'Enter' && !analyzeButton?.disabled) {
+            e.preventDefault(); // Prevent default form submission
             this.handleAnalyze();
           }
         });
@@ -99,6 +100,7 @@ class InteractionManager {
         
         postUrlInput.addEventListener('keypress', (e) => {
           if (e.key === 'Enter' && !analyzeButton?.disabled) {
+            e.preventDefault(); // Prevent default form submission
             this.handleAnalyze();
           }
         });
@@ -161,17 +163,15 @@ class InteractionManager {
       }
 
       // Generate post button
-      const generateButton = document.getElementById('generate-post-btn');
+      const generateButton = document.getElementById('generate-button') || 
+                           document.getElementById('generate-post-btn');
       if (generateButton) {
         generateButton.addEventListener('click', (e) => {
-          const topic = document.getElementById('post-topic')?.value;
-          if (!topic) {
-            this.showToast('Please enter a topic', 'error');
-            return;
-          }
           this.createRippleEffect(e);
           this.generatePost();
         });
+      } else {
+        console.warn('Generate post button not found');
       }
 
       // Tab navigation
@@ -330,23 +330,40 @@ class InteractionManager {
   }
 
   createRippleEffect(event) {
-    if (!event?.currentTarget) return;
-    
-    const button = event.currentTarget;
-    const ripple = document.createElement('span');
-    ripple.className = 'ripple';
-    
-    const rect = button.getBoundingClientRect();
-    const size = Math.max(rect.width, rect.height);
-    ripple.style.width = ripple.style.height = `${size}px`;
-    
-    const x = event.clientX - rect.left - size / 2;
-    const y = event.clientY - rect.top - size / 2;
-    ripple.style.left = `${x}px`;
-    ripple.style.top = `${y}px`;
-    
-    button.appendChild(ripple);
-    ripple.addEventListener('animationend', () => ripple.remove());
+    try {
+      const button = event.currentTarget;
+      
+      if (!button) return;
+      
+      // Remove existing ripples
+      const existingRipple = button.querySelector('.ripple');
+      if (existingRipple) {
+        existingRipple.remove();
+      }
+      
+      // Create ripple element
+      const ripple = document.createElement('span');
+      ripple.className = 'ripple';
+      button.appendChild(ripple);
+      
+      // Calculate position
+      const rect = button.getBoundingClientRect();
+      const size = Math.max(rect.width, rect.height);
+      
+      ripple.style.width = ripple.style.height = `${size}px`;
+      ripple.style.left = `${event.clientX - rect.left - size / 2}px`;
+      ripple.style.top = `${event.clientY - rect.top - size / 2}px`;
+      
+      // Add active class
+      ripple.classList.add('active');
+      
+      // Remove after animation completes
+      setTimeout(() => {
+        ripple.remove();
+      }, 600);
+    } catch (error) {
+      console.error('Error creating ripple effect:', error);
+    }
   }
 
   checkSignInState() {
@@ -362,6 +379,7 @@ class InteractionManager {
   }
 
   async handleAnalyze() {
+    console.log('handleAnalyze called');
     if (this.isAnalyzing) {
       this.showToast('Analysis already in progress', 'info');
       return;
@@ -370,6 +388,7 @@ class InteractionManager {
     const profileInput = document.getElementById('profile-input');
     const postUrlInput = document.getElementById('post-url');
     const analyzeButton = document.getElementById('analyze-button');
+    const resultsContainer = document.getElementById('results-container');
     
     if (!profileInput && !postUrlInput) {
       this.showError('Input elements not found', { critical: true });
@@ -380,6 +399,7 @@ class InteractionManager {
     const postUrlValue = postUrlInput?.value.trim() || '';
     
     if (!profileValue && !postUrlValue) {
+      this.shakeElement(profileInput);
       this.showToast('Please enter a profile handle, URL, or post URL', 'error');
       if (profileInput) profileInput.focus();
       return;
@@ -392,7 +412,10 @@ class InteractionManager {
       this.isAnalyzing = true;
       
       // Update button state
-      this.setButtonLoading(analyzeButton, true, 'Analyzing...');
+      if (analyzeButton) {
+        this.setButtonLoading(analyzeButton, true, 'Analyzing...');
+        this.pulseElement(analyzeButton);
+      }
       
       // Show the loading overlay
       this.showLoading();
@@ -404,10 +427,12 @@ class InteractionManager {
 
       // Validate input
       if (profileValue && !this.validateProfileInput(profileValue)) {
+        this.shakeElement(profileInput);
         throw new Error('Invalid profile format. Please use @handle or full profile URL.');
       }
       
       if (postUrlValue && !this.validatePostUrl(postUrlValue)) {
+        this.shakeElement(postUrlInput);
         throw new Error('Invalid post URL format. Please use a valid X post URL.');
       }
 
@@ -430,7 +455,14 @@ class InteractionManager {
         }
         
         if (response.success) {
-          this.updateResults(response.data);
+          if (resultsContainer) {
+            resultsContainer.style.display = 'block';
+            this.updateResults(response.data);
+            
+            // Scroll to results
+            resultsContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }
+          
           this.showToast('Analysis completed successfully!', 'success');
           
           // Save to history
@@ -440,6 +472,13 @@ class InteractionManager {
             // Extract username from post URL for history
             const username = this.extractUsernameFromUrl(postUrlValue);
             if (username) this.saveToHistory(username);
+          }
+          
+          // Enable retry button
+          const retryButton = document.getElementById('retry-button');
+          if (retryButton) {
+            retryButton.disabled = false;
+            this.pulseElement(retryButton);
           }
         } else {
           throw new Error(response.error || 'Analysis failed');
@@ -456,7 +495,9 @@ class InteractionManager {
       this.isAnalyzing = false;
       
       // Restore button state
-      this.setButtonLoading(analyzeButton, false);
+      if (analyzeButton) {
+        this.setButtonLoading(analyzeButton, false);
+      }
       
       // Hide the loading overlay
       this.hideLoading();
@@ -472,32 +513,42 @@ class InteractionManager {
     }
   }
 
-  setButtonLoading(buttonId, isLoading, loadingText = 'Loading...', originalText = null) {
-    const button = typeof buttonId === 'string' ? document.getElementById(buttonId) : buttonId;
-    if (!button) {
-      console.warn(`Button not found: ${buttonId}`);
-      return;
-    }
+  setButtonLoading(button, isLoading, loadingText = null) {
+    if (!button) return;
     
     try {
+      // Store original text for restoration
+      if (isLoading && !button.hasAttribute('data-original-text')) {
+        button.setAttribute('data-original-text', button.innerHTML);
+      }
+      
       if (isLoading) {
+        // Set to loading state
+        button.classList.add('button-loading');
         button.disabled = true;
-        button.dataset.originalText = button.innerHTML;
-        button.innerHTML = `<div class="loading-spinner"></div> ${loadingText}`;
-        button.classList.add('loading');
+        
+        // Set loading text if provided
+        if (loadingText) {
+          // Preserve the loading spinner by using data attribute instead of innerHTML
+          button.setAttribute('data-loading-text', loadingText);
+        }
       } else {
+        // Restore original state
+        button.classList.remove('button-loading');
         button.disabled = false;
-        button.innerHTML = originalText || button.dataset.originalText || button.innerHTML;
-        button.classList.remove('loading');
-        delete button.dataset.originalText;
+        
+        // Restore original text
+        const originalText = button.getAttribute('data-original-text');
+        if (originalText) {
+          button.innerHTML = originalText;
+          button.removeAttribute('data-original-text');
+        }
+        
+        // Remove loading text
+        button.removeAttribute('data-loading-text');
       }
     } catch (error) {
       console.error('Error setting button loading state:', error);
-      // Try to restore button to non-loading state
-      if (button) {
-        button.disabled = false;
-        button.classList.remove('loading');
-      }
     }
   }
 
@@ -535,160 +586,231 @@ class InteractionManager {
   }
 
   async handleSignIn() {
+    const signInButton = document.querySelector('.sign-in-button');
+    
     try {
       const isSignedIn = localStorage.getItem('isSignedIn') === 'true';
       
       if (isSignedIn) {
-        await this.showConfirmationModal(
+        // User is signed in, show sign out confirmation
+        this.showConfirmationModal(
           'Sign Out', 
-          'Are you sure you want to sign out?',
+          'Are you sure you want to sign out of your X account?',
           () => {
+            // User confirmed sign out
             localStorage.setItem('isSignedIn', 'false');
             localStorage.removeItem('userProfile');
             this.updateSignInState(false);
-            this.showToast('Signed out successfully', 'info');
+            this.showToast('Signed out successfully', 'success');
           }
         );
       } else {
+        // User is not signed in, show sign in flow
         await this.authenticateWithX();
       }
     } catch (error) {
-      console.error('Sign in error:', error);
+      console.error('Sign in/out error:', error);
       this.showToast('Failed to process sign in/out request', 'error');
-    }
-  }
-
-  async authenticateWithX() {
-    const signInButton = document.querySelector('.sign-in-button');
-    try {
-      if (signInButton) {
-        this.setButtonLoading(signInButton, true, 'Signing in...');
-      }
       
-      // Simulate auth process
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      const mockUserProfile = {
-        name: 'X User',
-        username: 'xuser',
-        avatar: 'https://via.placeholder.com/32'
-      };
-      
-      localStorage.setItem('isSignedIn', 'true');
-      localStorage.setItem('userProfile', JSON.stringify(mockUserProfile));
-      
-      this.updateSignInState(true);
-      this.showToast('Successfully signed in', 'success');
-    } catch (error) {
-      console.error('Authentication error:', error);
-      this.showToast('Authentication failed', 'error');
-    } finally {
+      // Restore button state in case of error
       if (signInButton) {
         this.setButtonLoading(signInButton, false);
       }
     }
   }
 
-  resetToHome() {
-    // Switch to analyze tab
-    this.switchTab('analyze');
+  async authenticateWithX() {
+    const signInButton = document.querySelector('.sign-in-button');
     
-    // Clear inputs
-    document.querySelectorAll('input').forEach(input => {
-      input.value = '';
-      const clearButton = input.parentElement?.querySelector('.clear-input');
-      if (clearButton) {
-        clearButton.style.display = 'none';
+    try {
+      // Show loading state
+      if (signInButton) {
+        this.setButtonLoading(signInButton, true, 'Signing in...');
+        this.pulseElement(signInButton);
       }
-    });
-    
-    // Reset UI state
-    const analyzeButton = document.getElementById('analyze-button');
-    if (analyzeButton) {
-      analyzeButton.disabled = true;
-      analyzeButton.classList.remove('active');
+      
+      // Simulate authentication process
+      this.showToast('Connecting to X...', 'info');
+      
+      // For demo purposes, simulate a network delay
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      
+      // In a real extension, this would call the X OAuth flow
+      // For now, we'll use mock data
+      const mockUserProfile = {
+        name: 'X User',
+        username: 'xuser',
+        avatarUrl: 'https://via.placeholder.com/32'
+      };
+      
+      // Save to localStorage
+      localStorage.setItem('isSignedIn', 'true');
+      localStorage.setItem('userProfile', JSON.stringify(mockUserProfile));
+      
+      // Update UI
+      this.updateSignInState(true);
+      
+      // Show success toast
+      this.showToast('Successfully signed in to X', 'success');
+      
+      return true;
+    } catch (error) {
+      console.error('Authentication error:', error);
+      this.showError('Failed to authenticate with X. Please try again.');
+      return false;
+    } finally {
+      // Always restore button state
+      if (signInButton) {
+        this.setButtonLoading(signInButton, false);
+      }
     }
-    
-    const resultsContainer = document.querySelector('.results-container');
-    if (resultsContainer) {
-      resultsContainer.style.display = 'none';
+  }
+
+  updateSignInState(isSignedIn) {
+    try {
+      const signInButton = document.querySelector('.sign-in-button');
+      const userProfileElement = document.querySelector('.user-profile');
+      
+      if (isSignedIn) {
+        // Get user data from localStorage
+        const userData = JSON.parse(localStorage.getItem('userProfile') || '{}');
+        
+        // Update user profile element if it exists
+        if (userProfileElement) {
+          userProfileElement.style.display = 'flex';
+          
+          // Create profile content
+          let profileContent = '';
+          if (userData.avatarUrl) {
+            profileContent = `<img src="${userData.avatarUrl}" alt="${userData.name}" class="profile-picture">`;
+          } else {
+            const initial = userData.name ? userData.name.charAt(0).toUpperCase() : 'X';
+            profileContent = `<div class="profile-placeholder">${initial}</div>`;
+          }
+          
+          userProfileElement.innerHTML = profileContent;
+          
+          // Add click handler to user profile for account options
+          userProfileElement.onclick = (e) => {
+            this.handleSignIn();
+          };
+        }
+        
+        // Hide sign in button
+        if (signInButton) {
+          signInButton.style.display = 'none';
+        }
+      } else {
+        // Hide user profile element
+        if (userProfileElement) {
+          userProfileElement.style.display = 'none';
+          userProfileElement.innerHTML = '';
+          userProfileElement.onclick = null;
+        }
+        
+        // Show sign in button
+        if (signInButton) {
+          signInButton.style.display = 'flex';
+        }
+      }
+    } catch (error) {
+      console.error('Error updating sign-in state:', error);
     }
-    
-    // Add animation to home button
+  }
+
+  resetToHome() {
     const homeButton = document.querySelector('.home-button');
-    if (homeButton) {
-      homeButton.classList.add('pulse');
-      setTimeout(() => homeButton.classList.remove('pulse'), 300);
-    }
     
-    this.showToast('View refreshed', 'success');
+    try {
+      // Show loading animation on button
+      if (homeButton) {
+        this.setButtonLoading(homeButton, true, 'Resetting...');
+        this.pulseElement(homeButton);
+      }
+      
+      // Reset UI state
+      
+      // 1. Clear any input fields
+      const profileInput = document.getElementById('profile-input');
+      if (profileInput) {
+        profileInput.value = '';
+      }
+      
+      const postTopic = document.getElementById('post-topic');
+      if (postTopic) {
+        postTopic.value = '';
+      }
+      
+      const postContent = document.getElementById('post-content');
+      if (postContent) {
+        postContent.value = '';
+        
+        // Trigger input event to update character count
+        const inputEvent = new Event('input', { bubbles: true });
+        postContent.dispatchEvent(inputEvent);
+      }
+      
+      // 2. Hide any results containers
+      const resultsContainer = document.querySelector('.results-container');
+      if (resultsContainer) {
+        resultsContainer.style.display = 'none';
+      }
+      
+      // 3. Reset any active tabs to the first tab
+      this.switchTab('analyze-tab', 'analyze');
+      
+      // 4. Clear any loading indicators
+      this.cancelLoading();
+      
+      // 5. Reset form fields to defaults where needed
+      const toneOptions = document.querySelectorAll('input[name="tone"]');
+      if (toneOptions && toneOptions.length > 0) {
+        toneOptions.forEach(option => option.checked = false);
+      }
+      
+      const typeOptions = document.querySelectorAll('input[name="post-type"]');
+      if (typeOptions && typeOptions.length > 0) {
+        typeOptions.forEach(option => option.checked = false);
+      }
+      
+      // Show success toast
+      this.showToast('Reset complete', 'success');
+      
+      // Check user sign-in state and update UI accordingly
+      const isSignedIn = localStorage.getItem('isSignedIn') === 'true';
+      this.updateSignInState(isSignedIn);
+    } catch (error) {
+      console.error('Error resetting to home:', error);
+      this.showToast('Failed to reset completely', 'error');
+    } finally {
+      // Reset button state with slight delay for visual feedback
+      setTimeout(() => {
+        if (homeButton) {
+          this.setButtonLoading(homeButton, false);
+        }
+      }, 300);
+    }
   }
 
   showLoading() {
-    try {
-      // First check if loading overlay exists, create if not
-      let overlay = document.querySelector('.loading-overlay');
-      
-      if (!overlay) {
-        overlay = document.createElement('div');
-        overlay.className = 'loading-overlay hidden';
-        overlay.innerHTML = `
-          <div class="loading-content">
-            <div class="loading-spinner"></div>
-            <div class="loading-text">Starting analysis...</div>
-            <div class="progress-container">
-              <div class="progress-track">
-                <div class="progress-fill" style="width: 0%"></div>
-              </div>
-            </div>
-          </div>
-        `;
-        document.body.appendChild(overlay);
-      }
-      
-      // Remove the hidden class
+    const overlay = document.querySelector('.loading-overlay');
+    if (overlay) {
       overlay.classList.remove('hidden');
-      overlay.style.display = 'flex';
-      setTimeout(() => overlay.classList.add('visible'), 10);
-      
-      console.log('Loading UI shown');
-    } catch (error) {
-      console.error('Error showing loading UI:', error);
+      // Use a timeout to ensure the fade-in animation works
+      setTimeout(() => {
+        overlay.classList.add('visible');
+      }, 10);
     }
   }
 
   hideLoading() {
-    try {
-      const overlay = document.querySelector('.loading-overlay');
-      if (overlay) {
-        overlay.classList.remove('visible');
-        setTimeout(() => {
-          overlay.style.display = 'none';
-          // Add hidden class back
-          overlay.classList.add('hidden');
-          
-          // Reset the progress
-          const progressFill = overlay.querySelector('.progress-fill');
-          if (progressFill) {
-            progressFill.style.width = '0%';
-          }
-          // Reset the text
-          const loadingText = overlay.querySelector('.loading-text');
-          if (loadingText) {
-            loadingText.textContent = 'Starting analysis...';
-          }
-        }, 300);
-        
-        console.log('Loading UI hidden');
-      }
-    } catch (error) {
-      console.error('Error hiding loading UI:', error);
-      // Try force-hiding the overlay in case of error
-      const overlay = document.querySelector('.loading-overlay');
-      if (overlay) {
-        overlay.style.display = 'none';
+    const overlay = document.querySelector('.loading-overlay');
+    if (overlay) {
+      overlay.classList.remove('visible');
+      // Give time for fade-out
+      setTimeout(() => {
         overlay.classList.add('hidden');
-      }
+      }, 300);
     }
   }
 
@@ -765,40 +887,16 @@ class InteractionManager {
   }
 
   showError(message, options = {}) {
-    console.error(`Error: ${message}`);
+    const { recoverable = false, duration = 5000 } = options;
     
+    console.error(message);
+    
+    // Show error toast
     this.showToast(message, 'error');
     
-    if (options.critical) {
-      // For critical errors, add a persistent error notification
-      const resultsContainer = document.querySelector('.results-container');
-      if (resultsContainer) {
-        resultsContainer.innerHTML = `
-          <div class="error-box">
-            <svg viewBox="0 0 24 24" width="24" height="24">
-              <circle cx="12" cy="12" r="10" fill="#f4212e"/>
-              <path d="M12 8v5M12 16v.01" stroke="white" stroke-width="2" stroke-linecap="round"/>
-            </svg>
-            <div class="error-message">
-              <strong>Error:</strong> ${message}
-              <p>Please try again or refresh the extension.</p>
-            </div>
-          </div>
-        `;
-        resultsContainer.style.display = 'block';
-      }
-    }
-    
-    if (message.includes('rate limit')) {
-      this.handleRateLimitError();
-    } else if (message.includes('network') || message.includes('connection')) {
-      this.checkNetworkConnection();
-    }
-    
-    const retryButton = document.getElementById('retry-button');
-    if (retryButton && options.recoverable !== false) {
-      retryButton.disabled = false;
-      this.pulseElement(retryButton);
+    // Hide loading if active and error is not recoverable
+    if (!recoverable) {
+      this.cancelLoading();
     }
   }
 
@@ -809,29 +907,32 @@ class InteractionManager {
   }
 
   async showProgressiveLoading() {
-    try {
-      const stages = [
-        { message: 'Connecting to API...', progress: 15 },
-        { message: 'Authenticating...', progress: 25 },
-        { message: 'Fetching profile data...', progress: 40 },
-        { message: 'Analyzing metrics...', progress: 60 },
-        { message: 'Processing engagement patterns...', progress: 75 },
-        { message: 'Generating insights...', progress: 90 }
-      ];
+    const stages = [
+      { message: 'Connecting to X API...', progress: 15 },
+      { message: 'Fetching profile data...', progress: 30 },
+      { message: 'Analyzing engagement metrics...', progress: 45 },
+      { message: 'Processing content patterns...', progress: 60 },
+      { message: 'Calculating influence score...', progress: 75 },
+      { message: 'Generating recommendations...', progress: 90 },
+      { message: 'Finalizing results...', progress: 98 }
+    ];
 
-      for (const stage of stages) {
-        this.updateLoadingStatus(stage.message, stage.progress);
-        // Randomize the delay slightly to make it feel more realistic
-        const delay = 400 + Math.random() * 300;
-        await new Promise(resolve => setTimeout(resolve, delay));
-      }
+    for (const stage of stages) {
+      this.updateLoadingStatus(stage.message, stage.progress);
       
-      // Final state
-      this.updateLoadingStatus('Finalizing analysis...', 100);
-    } catch (error) {
-      console.error('Error in progressive loading:', error);
-      // If there's an error, still show some progress
-      this.updateLoadingStatus('Processing...', 75);
+      // Random delay between 300-700ms to make it feel more natural
+      const delay = Math.floor(Math.random() * 400) + 300;
+      await new Promise(resolve => setTimeout(resolve, delay));
+      
+      // Simulate cancellation handling
+      if (!this.isAnalyzing) {
+        break;
+      }
+    }
+    
+    // Show complete message
+    if (this.isAnalyzing) {
+      this.updateLoadingStatus('Analysis complete!', 100);
     }
   }
 
@@ -841,6 +942,7 @@ class InteractionManager {
       const progressFill = document.querySelector('.progress-fill');
       
       if (loadingText) {
+        // Fade out, update text, fade in
         loadingText.style.opacity = '0';
         setTimeout(() => {
           loadingText.textContent = message;
@@ -849,15 +951,18 @@ class InteractionManager {
       }
       
       if (progressFill) {
+        // Animate the progress
         progressFill.style.width = `${progress}%`;
         
-        // Add pulsing animation when reaching 100%
+        // Add pulse animation when complete
         if (progress >= 100) {
           progressFill.classList.add('pulse-animation');
         } else {
           progressFill.classList.remove('pulse-animation');
         }
       }
+      
+      console.log(`Loading status: ${message} (${progress}%)`);
     } catch (error) {
       console.error('Error updating loading status:', error);
     }
@@ -865,51 +970,75 @@ class InteractionManager {
 
   pulseElement(element) {
     if (!element) return;
-    element.classList.add('pulse');
-    setTimeout(() => element.classList.remove('pulse'), 1000);
+    
+    try {
+      // Add pulse animation class
+      element.classList.add('pulse-animation');
+      
+      // Remove it after animation completes to allow retriggering
+      setTimeout(() => {
+        element.classList.remove('pulse-animation');
+      }, 600); // Animation is 0.5s, we set timeout slightly longer
+    } catch (error) {
+      console.error('Error pulsing element:', error);
+    }
+  }
+
+  shakeElement(element) {
+    if (!element) return;
+    
+    try {
+      // Add shake animation class
+      element.classList.add('shake-animation');
+      
+      // Remove it after animation completes to allow retriggering
+      setTimeout(() => {
+        element.classList.remove('shake-animation');
+      }, 600); // Animation is 0.5s, we set timeout slightly longer
+    } catch (error) {
+      console.error('Error shaking element:', error);
+    }
   }
 
   switchTab(tabName) {
+    console.log(`Switching to tab: ${tabName}`);
+    
     try {
-      console.log(`Switching to tab: ${tabName}`);
+      // Get all tab buttons and content sections
+      const tabButtons = document.querySelectorAll('.tab-button');
+      const tabContents = document.querySelectorAll('.tab-content');
       
-      // Get references to all elements
-      const allTabButtons = document.querySelectorAll('.tab-button');
-      const allTabContents = document.querySelectorAll('.tab-content');
-      const selectedTabButton = document.querySelector(`.tab-button[data-tab="${tabName}"]`);
-      const selectedTabContent = document.getElementById(`${tabName}-tab`);
+      // Find the target button and content
+      const targetButton = document.querySelector(`.tab-button[data-tab="${tabName}"]`);
+      const targetContent = document.getElementById(tabName);
       
-      // Check if elements exist
-      if (!selectedTabButton || !selectedTabContent) {
-        console.error(`Tab elements for "${tabName}" not found`);
-        console.log('Available tabs:', Array.from(allTabButtons).map(el => el.dataset.tab));
-        this.showToast(`Could not switch to tab: ${tabName}`, 'error');
+      if (!targetButton || !targetContent) {
+        console.error(`Tab "${tabName}" not found. Available tabs:`, 
+          Array.from(tabButtons).map(btn => btn.getAttribute('data-tab')));
+        this.showToast(`Error switching tabs`, 'error');
         return;
       }
       
       // Remove active class from all tabs
-      allTabButtons.forEach(btn => btn.classList.remove('active'));
-      allTabContents.forEach(content => content.classList.remove('active'));
+      tabButtons.forEach(btn => btn.classList.remove('active'));
+      tabContents.forEach(content => content.classList.remove('active'));
       
-      // Add active class to selected tab
-      selectedTabButton.classList.add('active');
-      selectedTabContent.classList.add('active');
-      
-      // Ensure the tab content is visible
-      selectedTabContent.style.display = 'block';
+      // Add active class to target tab
+      targetButton.classList.add('active');
+      targetContent.classList.add('active');
       
       // Add animation class
-      selectedTabContent.classList.add('slide-in');
-      setTimeout(() => {
-        selectedTabContent.classList.remove('slide-in');
-      }, 300);
+      targetButton.classList.add('tab-clicked');
+      targetContent.classList.add('slide-in');
       
-      // Save the current tab to local storage for persistence
-      try {
-        localStorage.setItem('currentTab', tabName);
-      } catch (e) {
-        console.warn('Could not save current tab to local storage:', e);
-      }
+      // Remove animation classes after animation completes
+      setTimeout(() => {
+        targetButton.classList.remove('tab-clicked');
+        targetContent.classList.remove('slide-in');
+      }, 600);
+      
+      // Save current tab to localStorage
+      localStorage.setItem('currentTab', tabName);
       
       console.log(`Successfully switched to tab: ${tabName}`);
     } catch (error) {
@@ -918,1080 +1047,209 @@ class InteractionManager {
     }
   }
 
-  updateSignInState(isSignedIn) {
-    const signInButton = document.querySelector('.sign-in-button');
-    const userProfile = document.querySelector('.user-profile');
+  generatePost() {
+    const generateButton = document.getElementById('generate-button');
     
-    if (isSignedIn) {
-      const userData = JSON.parse(localStorage.getItem('userProfile') || '{}');
-      
-      if (userProfile) {
-        userProfile.style.display = 'flex';
-        userProfile.innerHTML = userData.avatar ? 
-          `<img src="${userData.avatar}" alt="${userData.name}" class="profile-picture">` :
-          `<div class="profile-placeholder">${userData.name?.charAt(0) || 'X'}</div>`;
-      }
-      
-      if (signInButton) {
-        signInButton.style.display = 'none';
-      }
-    } else {
-      if (userProfile) {
-        userProfile.style.display = 'none';
-      }
-      if (signInButton) {
-        signInButton.style.display = 'flex';
-      }
+    if (!generateButton) {
+      console.error('Generate button not found');
+      return;
     }
-  }
-
-  showConfirmationModal(title, message, confirmCallback) {
-    return new Promise((resolve) => {
-      const modal = document.createElement('div');
-      modal.className = 'modal confirmation-modal';
-      modal.innerHTML = `
-        <div class="modal-content">
-          <div class="modal-header">
-            <h3>${title}</h3>
-            <button class="close-modal">×</button>
-          </div>
-          <div class="modal-body">
-            <p>${message}</p>
-          </div>
-          <div class="modal-footer">
-            <button class="cancel-button">Cancel</button>
-            <button class="confirm-button primary-button">Confirm</button>
-          </div>
-        </div>
-      `;
-      
-      document.body.appendChild(modal);
-      
-      const handleClose = () => {
-        modal.style.opacity = '0';
-        setTimeout(() => {
-          modal.remove();
-          resolve(false);
-        }, 300);
-      };
-      
-      const handleConfirm = () => {
-        modal.style.opacity = '0';
-        setTimeout(() => {
-          modal.remove();
-          if (confirmCallback) {
-            confirmCallback();
-          }
-          resolve(true);
-        }, 300);
-      };
-      
-      modal.querySelector('.close-modal')?.addEventListener('click', handleClose);
-      modal.querySelector('.cancel-button')?.addEventListener('click', handleClose);
-      modal.querySelector('.confirm-button')?.addEventListener('click', handleConfirm);
-      
-      setTimeout(() => modal.style.opacity = '1', 10);
-    });
-  }
-
-  // Validation for post URL
-  validatePostUrl(url) {
-    return /^https?:\/\/(www\.)?(x\.com|twitter\.com)\/[a-zA-Z0-9_]+\/status\/\d+/.test(url);
-  }
-  
-  // Extract username from post URL
-  extractUsernameFromUrl(url) {
-    const match = url.match(/^https?:\/\/(www\.)?(x\.com|twitter\.com)\/([a-zA-Z0-9_]+)\/status\/\d+/);
-    return match ? match[3] : null;
-  }
-
-  // Fetch profile analysis from X Developer API and GrokAI
-  async fetchProfileAnalysis(profileHandle) {
-    console.log(`Fetching profile analysis for: ${profileHandle}`);
     
     try {
-      const formattedHandle = profileHandle.startsWith('@') ? 
-        profileHandle.substring(1) : 
-        profileHandle.replace(/^https?:\/\/(www\.)?(x\.com|twitter\.com)\//, '').split('/')[0];
-      
-      // Show detailed progressive loading
-      this.updateLoadingStatus('Connecting to X API...', 20);
-      await new Promise(resolve => setTimeout(resolve, 300));
-      
-      this.updateLoadingStatus('Retrieving profile data...', 40);
-      await new Promise(resolve => setTimeout(resolve, 400));
-      
-      this.updateLoadingStatus('Processing with GrokAI...', 60);
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      this.updateLoadingStatus('Generating insights...', 80);
-      await new Promise(resolve => setTimeout(resolve, 400));
-      
-      // Integration point: Real API call would go here
-      // For now using a more realistic simulation with improved data
-      
-      // Simulated API call delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Calculate realistic metrics
-      const engagementRate = (Math.random() * 5 + 1).toFixed(2) + '%';
-      const growthRate = (Math.random() * 5 - 1).toFixed(2) + '%';
-      const followersCount = Math.floor(Math.random() * 10000 + 500);
-      const impressions = Math.floor(followersCount * (Math.random() * 8 + 3));
-      const impactScore = Math.floor(Math.random() * 50 + 50);
-      
-      // Generate more realistic post examples
-      const topPosts = [
-        {
-          id: 'post1',
-          text: `Just had an amazing conversation about tech innovation in AI. The possibilities are truly limitless! #TechTalks #AI #Innovation`,
-          engagement: Math.floor(Math.random() * 500 + 100),
-          timestamp: Date.now() - (Math.random() * 7 * 86400000)
-        },
-        {
-          id: 'post2',
-          text: `Today's update on our product launch exceeded all expectations. Thank you to everyone who supported us on this journey! 🚀`,
-          engagement: Math.floor(Math.random() * 400 + 50),
-          timestamp: Date.now() - (Math.random() * 14 * 86400000)
-        },
-        {
-          id: 'post3',
-          text: `Sharing my thoughts on the recent industry developments. Let me know what you think in the comments below! #IndustryInsights`,
-          engagement: Math.floor(Math.random() * 300 + 50),
-          timestamp: Date.now() - (Math.random() * 21 * 86400000)
-        }
-      ];
-      
-      // Generate relevant AI-powered recommendations
-      const recommendations = this.generateRecommendations(engagementRate, growthRate, topPosts);
-      
-      // Enhanced analytics for more realistic insights
-      const analytics = {
-        bestPostingTimes: ['9:00 AM', '5:30 PM', '8:00 PM'],
-        audienceDemographics: {
-          ageGroups: {
-            '18-24': 15,
-            '25-34': 38,
-            '35-44': 27,
-            '45-54': 12,
-            '55+': 8
-          },
-          topLocations: ['United States', 'United Kingdom', 'Canada', 'India', 'Australia']
-        },
-        contentPerformance: {
-          topHashtags: ['#Tech', '#Innovation', '#AI', '#Programming', '#Dev'],
-          engagementByType: {
-            'Text only': 25,
-            'With image': 40,
-            'With video': 30,
-            'With link': 5
-          }
-        }
-      };
-      
-      return {
-        success: true,
-        data: {
-          username: formattedHandle,
-          profileUrl: `https://x.com/${formattedHandle}`,
-          engagement: engagementRate,
-          growth: growthRate,
-          followers: followersCount.toLocaleString(),
-          reach: impressions.toLocaleString(),
-          impact: impactScore.toString(),
-          topContent: topPosts,
-          recommendations: recommendations,
-          analytics: analytics,
-          analysisType: 'profile'
-        }
-      };
-    } catch (error) {
-      console.error('Error in fetchProfileAnalysis:', error);
-      return {
-        success: false,
-        error: 'Failed to analyze profile. Please check your connection and try again.'
-      };
-    }
-  }
-  
-  // Fetch post analysis from X Developer API and GrokAI
-  async fetchPostAnalysis(postUrl) {
-    console.log(`Fetching post analysis for: ${postUrl}`);
-    
-    try {
-      // Extract post ID from URL
-      const postIdMatch = postUrl.match(/\/status\/(\d+)/);
-      if (!postIdMatch) {
-        throw new Error('Invalid post URL format');
-      }
-      
-      const postId = postIdMatch[1];
-      const username = this.extractUsernameFromUrl(postUrl);
-      
-      // Show detailed progressive loading
-      this.updateLoadingStatus('Connecting to X API...', 20);
-      await new Promise(resolve => setTimeout(resolve, 300));
-      
-      this.updateLoadingStatus('Retrieving post data...', 40);
-      await new Promise(resolve => setTimeout(resolve, 400));
-      
-      this.updateLoadingStatus('Analyzing engagement...', 60);
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      this.updateLoadingStatus('Generating insights...', 80);
-      await new Promise(resolve => setTimeout(resolve, 400));
-      
-      // Integration point: Real API call would go here
-      // Simulated API call delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Generate realistic post data
-      const likesCount = Math.floor(Math.random() * 500 + 50);
-      const retweetsCount = Math.floor(likesCount * (Math.random() * 0.3 + 0.1));
-      const repliesCount = Math.floor(likesCount * (Math.random() * 0.2 + 0.05));
-      const viewsCount = Math.floor(likesCount * (Math.random() * 20 + 10));
-      
-      const postTimestamp = Date.now() - Math.floor(Math.random() * 30 * 86400000);
-      const engagementRate = ((likesCount + retweetsCount + repliesCount) / viewsCount * 100).toFixed(2) + '%';
-      
-      // Generate post content with realistic text
-      const postText = "This is an exciting announcement about our new product launch! We've been working hard on bringing this innovation to market. #ProductLaunch #Innovation";
-      
-      // Generate engagement timeline data
-      const timeframeHours = 48;
-      const engagementTimeline = [];
-      
-      for (let i = 0; i < timeframeHours; i++) {
-        const hoursAgo = timeframeHours - i;
-        const timestamp = new Date(Date.now() - hoursAgo * 3600000);
-        
-        // Create a realistic engagement curve that peaks early and tapers off
-        let factor = 1.0;
-        if (hoursAgo > 40) factor = 0.1;
-        else if (hoursAgo > 30) factor = 0.2;
-        else if (hoursAgo > 20) factor = 0.5;
-        else if (hoursAgo > 10) factor = 0.7;
-        else if (hoursAgo > 5) factor = 0.9;
-        
-        engagementTimeline.push({
-          timestamp: timestamp.toISOString(),
-          likes: Math.floor(likesCount * factor * Math.random() * 0.1),
-          retweets: Math.floor(retweetsCount * factor * Math.random() * 0.1),
-          replies: Math.floor(repliesCount * factor * Math.random() * 0.1)
-        });
-      }
-      
-      // Generate AI analysis of the post content
-      const contentAnalysis = {
-        sentiment: Math.random() > 0.7 ? 'Negative' : Math.random() > 0.4 ? 'Positive' : 'Neutral',
-        topics: ['Product Launch', 'Innovation', 'Technology', 'Marketing'],
-        keyPhrases: ['exciting announcement', 'new product launch', 'innovation'],
-        tone: Math.random() > 0.6 ? 'Professional' : Math.random() > 0.3 ? 'Enthusiastic' : 'Informative',
-        readability: 'High'
-      };
-      
-      return {
-        success: true,
-        data: {
-          postId: postId,
-          username: username,
-          profileUrl: `https://x.com/${username}`,
-          postUrl: postUrl,
-          postText: postText,
-          metrics: {
-            likes: likesCount,
-            retweets: retweetsCount,
-            replies: repliesCount,
-            views: viewsCount,
-            engagement: engagementRate
-          },
-          postedAt: new Date(postTimestamp).toISOString(),
-          engagementTimeline: engagementTimeline,
-          contentAnalysis: contentAnalysis,
-          recommendations: [
-            'Posts with similar content perform best when published in the morning',
-            'Including more specific hashtags could improve reach',
-            'Adding a relevant image may increase engagement by up to 35%'
-          ],
-          analysisType: 'post'
-        }
-      };
-    } catch (error) {
-      console.error('Error in fetchPostAnalysis:', error);
-      return {
-        success: false,
-        error: 'Failed to analyze post. Please check the URL and try again.'
-      };
-    }
-  }
-  
-  // Fetch combined analysis for both profile and post
-  async fetchCombinedAnalysis(profileHandle, postUrl) {
-    try {
-      // Show combined loading message
-      this.updateLoadingStatus('Analyzing profile and post...', 50);
-      
-      // Request both analyses in parallel
-      const [profileResponse, postResponse] = await Promise.all([
-        this.fetchProfileAnalysis(profileHandle),
-        this.fetchPostAnalysis(postUrl)
-      ]);
-      
-      // Check if both were successful
-      if (profileResponse.success && postResponse.success) {
-        return {
-          success: true,
-          data: {
-            profile: profileResponse.data,
-            post: postResponse.data,
-            analysisType: 'combined'
-          }
-        };
-      } else {
-        // Return the error from whichever failed
-        return {
-          success: false,
-          error: !profileResponse.success ? profileResponse.error : postResponse.error
-        };
-      }
-    } catch (error) {
-      console.error('Error in fetchCombinedAnalysis:', error);
-      return {
-        success: false,
-        error: 'Failed to complete combined analysis. Please try again.'
-      };
-    }
-  }
-  
-  // Generate intelligent recommendations based on data
-  generateRecommendations(engagementRate, growthRate, topPosts) {
-    const recommendations = [];
-    
-    // Convert rates to numbers for comparison
-    const engagementValue = parseFloat(engagementRate);
-    const growthValue = parseFloat(growthRate);
-    
-    // Engagement-based recommendations
-    if (engagementValue < 3.0) {
-      recommendations.push('Increase post frequency to 3-4 times per week to boost engagement');
-      recommendations.push('Experiment with more visual content which tends to receive higher interaction');
-    } else {
-      recommendations.push('Maintain your current posting cadence which is showing good engagement');
-    }
-    
-    // Growth-based recommendations
-    if (growthValue < 0) {
-      recommendations.push('Consider running polls or questions to increase follower interaction');
-      recommendations.push('Engage more actively with trending topics in your niche');
-    } else if (growthValue < 2.0) {
-      recommendations.push('Your steady growth can be accelerated by cross-promoting on other platforms');
-    } else {
-      recommendations.push('Your growth rate is excellent - focus on retaining new followers with consistent content');
-    }
-    
-    // Content-based recommendations
-    if (topPosts && topPosts.length > 0) {
-      // Analyze top post patterns
-      const hasHashtags = topPosts.some(post => post.text.includes('#'));
-      const hasEmojis = topPosts.some(post => /[\u{1F600}-\u{1F64F}]/u.test(post.text));
-      const averageLength = topPosts.reduce((sum, post) => sum + post.text.length, 0) / topPosts.length;
-      
-      if (!hasHashtags) {
-        recommendations.push('Add relevant hashtags to increase discoverability of your posts');
-      }
-      
-      if (!hasEmojis) {
-        recommendations.push('Consider using emojis to make your posts more engaging and expressive');
-      }
-      
-      if (averageLength < 80) {
-        recommendations.push('Your top-performing posts are concise - continue with brief, impactful messaging');
-      } else {
-        recommendations.push('Your longer posts perform well - continue developing in-depth content');
-      }
-    }
-    
-    // Timing recommendation
-    recommendations.push('Post during peak hours (9AM and 5PM) to maximize visibility');
-    
-    // Limit to 5 recommendations
-    return recommendations.slice(0, 5);
-  }
-
-  updateResults(data) {
-    try {
-      console.log('Updating results with:', data);
-      
-      // Get the container
-      const resultsContainer = document.querySelector('.results-container');
-      if (!resultsContainer) {
-        console.error('Results container not found');
+      // Check if already loading
+      if (generateButton.classList.contains('loading')) {
         return;
       }
       
-      // Show the container
-      resultsContainer.style.display = 'block';
+      // Get the form values
+      const topic = document.getElementById('post-topic')?.value?.trim();
+      const tone = document.querySelector('input[name="tone"]:checked')?.value;
+      const type = document.querySelector('input[name="post-type"]:checked')?.value;
       
-      // Determine which type of analysis to display
-      if (data.analysisType === 'post') {
-        this.displayPostAnalysis(resultsContainer, data);
-      } else if (data.analysisType === 'combined') {
-        this.displayCombinedAnalysis(resultsContainer, data);
-      } else {
-        // Default to profile analysis (backwards compatible)
-        this.displayProfileAnalysis(resultsContainer, data);
+      // Validate required fields
+      if (!topic) {
+        this.shakeElement(document.getElementById('post-topic'));
+        this.showToast('Please enter a topic for your post', 'error');
+        return;
       }
       
-      // Add animations to make results appear with a nice effect
-      const cards = resultsContainer.querySelectorAll('.metric-card');
-      cards.forEach((card, index) => {
-        card.style.animationDelay = `${index * 100}ms`;
-        card.classList.add('fade-in');
-      });
-    } catch (error) {
-      console.error('Error updating results:', error);
-      this.showError('Failed to display analysis results', { recoverable: true });
-    }
-  }
-  
-  // Display profile analysis results
-  displayProfileAnalysis(container, data) {
-    container.innerHTML = `
-      <div class="results-header">
-        <h2>Profile Analysis: @${data.username || 'user'}</h2>
-        <div class="timestamp">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-            <path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-          </svg>
-          <span>Analyzed ${new Date().toLocaleString()}</span>
-        </div>
-      </div>
+      if (!tone) {
+        this.shakeElement(document.querySelector('.tone-options'));
+        this.showToast('Please select a tone for your post', 'error');
+        return;
+      }
       
-      <div class="metrics-grid">
-        <div class="metric-card">
-          <span class="metric-icon">📈</span>
-          <span class="metric-value">${data.engagement}</span>
-          <span class="metric-label">Engagement Rate</span>
-        </div>
-        <div class="metric-card">
-          <span class="metric-icon">📊</span>
-          <span class="metric-value">${data.growth}</span>
-          <span class="metric-label">Growth Rate</span>
-        </div>
-        <div class="metric-card">
-          <span class="metric-icon">👥</span>
-          <span class="metric-value">${data.followers || data.reach}</span>
-          <span class="metric-label">${data.followers ? 'Followers' : 'Reach'}</span>
-        </div>
-        <div class="metric-card">
-          <span class="metric-icon">⭐</span>
-          <span class="metric-value">${data.impact}</span>
-          <span class="metric-label">Impact Score</span>
-        </div>
-      </div>
+      if (!type) {
+        this.shakeElement(document.querySelector('.post-type-options'));
+        this.showToast('Please select a post type', 'error');
+        return;
+      }
       
-      ${data.analytics ? this.renderAnalyticsSection(data.analytics) : ''}
-      
-      ${data.recommendations ? `
-      <div class="recommendations-section">
-        <h3>Recommendations</h3>
-        <ul class="recommendations-list">
-          ${data.recommendations.map(rec => `<li>${rec}</li>`).join('')}
-        </ul>
-      </div>
-      ` : ''}
-      
-      ${data.topContent ? `
-      <div class="top-content-section">
-        <h3>Top Performing Content</h3>
-        <div class="top-posts">
-          ${data.topContent.map(post => `
-            <div class="top-post-card">
-              <div class="post-text">${post.text}</div>
-              <div class="post-metrics">
-                <div class="post-engagement">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-                    <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"></path>
-                  </svg>
-                  <span>${post.engagement} interactions</span>
-                </div>
-                <div class="post-date">${this.formatDate(post.timestamp)}</div>
-              </div>
-            </div>
-          `).join('')}
-        </div>
-      </div>
-      ` : ''}
-      
-      <div class="action-row">
-        <button class="action-button share-results">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-            <path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92s-1.31-2.92-2.92-2.92z"></path>
-          </svg>
-          Share Results
-        </button>
-        <button class="action-button download-report">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-            <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"></path>
-          </svg>
-          Download Report
-        </button>
-      </div>
-    `;
-    
-    // Add event listeners to new buttons
-    this.addResultActionEventListeners(container);
-  }
-  
-  // Display post analysis results
-  displayPostAnalysis(container, data) {
-    container.innerHTML = `
-      <div class="results-header">
-        <h2>Post Analysis</h2>
-        <div class="timestamp">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-            <path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-          </svg>
-          <span>Analyzed ${new Date().toLocaleString()}</span>
-        </div>
-      </div>
-      
-      <div class="post-preview-card">
-        <div class="post-author">
-          <span class="author-name">@${data.username || 'user'}</span>
-          <a href="${data.postUrl}" target="_blank" class="view-original">View Original</a>
-        </div>
-        <div class="post-content">${data.postText}</div>
-        <div class="post-date">Posted on ${new Date(data.postedAt).toLocaleDateString()}</div>
-      </div>
-      
-      <div class="metrics-grid">
-        <div class="metric-card">
-          <span class="metric-icon">❤️</span>
-          <span class="metric-value">${data.metrics.likes.toLocaleString()}</span>
-          <span class="metric-label">Likes</span>
-        </div>
-        <div class="metric-card">
-          <span class="metric-icon">🔄</span>
-          <span class="metric-value">${data.metrics.retweets.toLocaleString()}</span>
-          <span class="metric-label">Retweets</span>
-        </div>
-        <div class="metric-card">
-          <span class="metric-icon">💬</span>
-          <span class="metric-value">${data.metrics.replies.toLocaleString()}</span>
-          <span class="metric-label">Replies</span>
-        </div>
-        <div class="metric-card">
-          <span class="metric-icon">📊</span>
-          <span class="metric-value">${data.metrics.engagement}</span>
-          <span class="metric-label">Engagement Rate</span>
-        </div>
-      </div>
-      
-      ${data.contentAnalysis ? `
-      <div class="content-analysis-section">
-        <h3>Content Analysis</h3>
-        <div class="analysis-grid">
-          <div class="analysis-item">
-            <div class="analysis-label">Sentiment</div>
-            <div class="analysis-value">${data.contentAnalysis.sentiment}</div>
-          </div>
-          <div class="analysis-item">
-            <div class="analysis-label">Tone</div>
-            <div class="analysis-value">${data.contentAnalysis.tone}</div>
-          </div>
-          <div class="analysis-item">
-            <div class="analysis-label">Readability</div>
-            <div class="analysis-value">${data.contentAnalysis.readability}</div>
-          </div>
-          <div class="analysis-item">
-            <div class="analysis-label">Key Topics</div>
-            <div class="analysis-value topics-list">${data.contentAnalysis.topics.join(', ')}</div>
-          </div>
-        </div>
-      </div>
-      ` : ''}
-      
-      ${data.engagementTimeline && data.engagementTimeline.length > 0 ? `
-      <div class="timeline-section">
-        <h3>Engagement Timeline</h3>
-        <div class="timeline-chart">
-          <div class="chart-placeholder">
-            [Engagement timeline visualization would go here]
-          </div>
-          <div class="chart-legend">
-            <div class="legend-item"><span class="legend-color likes-color"></span> Likes</div>
-            <div class="legend-item"><span class="legend-color retweets-color"></span> Retweets</div>
-            <div class="legend-item"><span class="legend-color replies-color"></span> Replies</div>
-          </div>
-        </div>
-      </div>
-      ` : ''}
-      
-      ${data.recommendations ? `
-      <div class="recommendations-section">
-        <h3>Recommendations</h3>
-        <ul class="recommendations-list">
-          ${data.recommendations.map(rec => `<li>${rec}</li>`).join('')}
-        </ul>
-      </div>
-      ` : ''}
-      
-      <div class="action-row">
-        <button class="action-button share-results">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-            <path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92s-1.31-2.92-2.92-2.92z"></path>
-          </svg>
-          Share Results
-        </button>
-        <button class="action-button download-report">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-            <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"></path>
-          </svg>
-          Download Report
-        </button>
-      </div>
-    `;
-    
-    // Add event listeners to new buttons
-    this.addResultActionEventListeners(container);
-  }
-  
-  // Display combined analysis results
-  displayCombinedAnalysis(container, data) {
-    const profile = data.profile;
-    const post = data.post;
-    
-    container.innerHTML = `
-      <div class="results-header">
-        <h2>Combined Analysis: @${profile.username || 'user'}</h2>
-        <div class="timestamp">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-            <path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-          </svg>
-          <span>Analyzed ${new Date().toLocaleString()}</span>
-        </div>
-      </div>
-      
-      <div class="tab-buttons analysis-tabs">
-        <button class="tab-button analysis-tab active" data-analysis-tab="profile">Profile Analysis</button>
-        <button class="tab-button analysis-tab" data-analysis-tab="post">Post Analysis</button>
-        <button class="tab-button analysis-tab" data-analysis-tab="comparison">Comparison</button>
-      </div>
-      
-      <div class="analysis-content-container">
-        <div class="analysis-content active" id="profile-analysis">
-          <div class="metrics-grid">
-            <div class="metric-card">
-              <span class="metric-icon">📈</span>
-              <span class="metric-value">${profile.engagement}</span>
-              <span class="metric-label">Engagement Rate</span>
-            </div>
-            <div class="metric-card">
-              <span class="metric-icon">📊</span>
-              <span class="metric-value">${profile.growth}</span>
-              <span class="metric-label">Growth Rate</span>
-            </div>
-            <div class="metric-card">
-              <span class="metric-icon">👥</span>
-              <span class="metric-value">${profile.followers || profile.reach}</span>
-              <span class="metric-label">${profile.followers ? 'Followers' : 'Reach'}</span>
-            </div>
-            <div class="metric-card">
-              <span class="metric-icon">⭐</span>
-              <span class="metric-value">${profile.impact}</span>
-              <span class="metric-label">Impact Score</span>
-            </div>
-          </div>
-          
-          ${profile.topContent ? `
-          <div class="top-content-section">
-            <h3>Top Performing Content</h3>
-            <div class="top-posts">
-              ${profile.topContent.map(content => `
-                <div class="top-post-card">
-                  <div class="post-text">${content.text}</div>
-                  <div class="post-metrics">
-                    <div class="post-engagement">
-                      <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-                        <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"></path>
-                      </svg>
-                      <span>${content.engagement} interactions</span>
-                    </div>
-                    <div class="post-date">${this.formatDate(content.timestamp)}</div>
-                  </div>
-                </div>
-              `).join('')}
-            </div>
-          </div>
-          ` : ''}
-        </div>
-        
-        <div class="analysis-content" id="post-analysis">
-          <div class="post-preview-card">
-            <div class="post-content">${post.postText}</div>
-            <div class="post-date">Posted on ${new Date(post.postedAt).toLocaleDateString()}</div>
-          </div>
-          
-          <div class="metrics-grid">
-            <div class="metric-card">
-              <span class="metric-icon">❤️</span>
-              <span class="metric-value">${post.metrics.likes.toLocaleString()}</span>
-              <span class="metric-label">Likes</span>
-            </div>
-            <div class="metric-card">
-              <span class="metric-icon">🔄</span>
-              <span class="metric-value">${post.metrics.retweets.toLocaleString()}</span>
-              <span class="metric-label">Retweets</span>
-            </div>
-            <div class="metric-card">
-              <span class="metric-icon">💬</span>
-              <span class="metric-value">${post.metrics.replies.toLocaleString()}</span>
-              <span class="metric-label">Replies</span>
-            </div>
-            <div class="metric-card">
-              <span class="metric-icon">📊</span>
-              <span class="metric-value">${post.metrics.engagement}</span>
-              <span class="metric-label">Engagement Rate</span>
-            </div>
-          </div>
-          
-          ${post.contentAnalysis ? `
-          <div class="content-analysis-section">
-            <h3>Content Analysis</h3>
-            <div class="analysis-grid">
-              <div class="analysis-item">
-                <div class="analysis-label">Sentiment</div>
-                <div class="analysis-value">${post.contentAnalysis.sentiment}</div>
-              </div>
-              <div class="analysis-item">
-                <div class="analysis-label">Tone</div>
-                <div class="analysis-value">${post.contentAnalysis.tone}</div>
-              </div>
-            </div>
-          </div>
-          ` : ''}
-        </div>
-        
-        <div class="analysis-content" id="comparison">
-          <div class="comparison-section">
-            <h3>Post vs. Profile Performance</h3>
-            <div class="comparison-chart">
-              <div class="comparison-item">
-                <div class="comparison-label">Engagement</div>
-                <div class="comparison-bars">
-                  <div class="comparison-bar-container">
-                    <div class="comparison-bar post-bar" style="width: ${Math.min(parseFloat(post.metrics.engagement), 20)}%"></div>
-                    <span class="bar-label">Post: ${post.metrics.engagement}</span>
-                  </div>
-                  <div class="comparison-bar-container">
-                    <div class="comparison-bar profile-bar" style="width: ${Math.min(parseFloat(profile.engagement), 20)}%"></div>
-                    <span class="bar-label">Profile Avg: ${profile.engagement}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-          
-          <div class="insight-section">
-            <h3>Key Insights</h3>
-            <ul class="insights-list">
-              <li>This post ${parseFloat(post.metrics.engagement) > parseFloat(profile.engagement) ? 'outperformed' : 'underperformed'} your average engagement rate</li>
-              <li>The content style aligns with your top performing content patterns</li>
-              <li>This post reached approximately ${Math.floor(post.metrics.views / profile.followers * 100)}% of your followers</li>
-            </ul>
-          </div>
-        </div>
-      </div>
-      
-      <div class="recommendations-section">
-        <h3>Personalized Recommendations</h3>
-        <ul class="recommendations-list">
-          ${profile.recommendations.slice(0, 2).concat(post.recommendations.slice(0, 2)).map(rec => `<li>${rec}</li>`).join('')}
-          <li>Create more content similar to this post to maintain engagement momentum</li>
-        </ul>
-      </div>
-      
-      <div class="action-row">
-        <button class="action-button share-results">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-            <path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92s-1.31-2.92-2.92-2.92z"></path>
-          </svg>
-          Share Results
-        </button>
-        <button class="action-button download-report">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-            <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"></path>
-          </svg>
-          Download Report
-        </button>
-      </div>
-    `;
-    
-    // Add event listeners for analysis tabs
-    const tabButtons = container.querySelectorAll('.analysis-tab');
-    const contentContainers = container.querySelectorAll('.analysis-content');
-    
-    tabButtons.forEach(button => {
-      button.addEventListener('click', () => {
-        const tabName = button.getAttribute('data-analysis-tab');
-        
-        // Update button states
-        tabButtons.forEach(btn => btn.classList.remove('active'));
-        button.classList.add('active');
-        
-        // Update content visibility
-        contentContainers.forEach(content => content.classList.remove('active'));
-        container.querySelector(`#${tabName}-analysis`).classList.add('active');
-      });
-    });
-    
-    // Add event listeners to share and download buttons
-    this.addResultActionEventListeners(container);
-  }
-  
-  // Helper function to add event listeners to result action buttons
-  addResultActionEventListeners(container) {
-    container.querySelector('.share-results')?.addEventListener('click', () => {
-      this.handleShare();
-    });
-    
-    container.querySelector('.download-report')?.addEventListener('click', () => {
-      this.showToast('Report downloading functionality coming soon', 'info');
-    });
-  }
-  
-  // Render analytics section for profile data
-  renderAnalyticsSection(analytics) {
-    if (!analytics) return '';
-    
-    return `
-      <div class="analytics-section">
-        <h3>Detailed Analytics</h3>
-        
-        ${analytics.bestPostingTimes ? `
-        <div class="analytics-subsection">
-          <h4>Best Posting Times</h4>
-          <div class="time-slots">
-            ${analytics.bestPostingTimes.map(time => 
-              `<div class="time-slot">${time}</div>`
-            ).join('')}
-          </div>
-        </div>
-        ` : ''}
-        
-        ${analytics.audienceDemographics ? `
-        <div class="analytics-subsection">
-          <h4>Audience Demographics</h4>
-          <div class="demographics-grid">
-            <div class="demographics-chart">
-              <div class="chart-title">Age Groups</div>
-              <div class="age-bars">
-                ${Object.entries(analytics.audienceDemographics.ageGroups).map(([group, percentage]) => `
-                  <div class="age-bar-container">
-                    <div class="age-label">${group}</div>
-                    <div class="age-bar-wrapper">
-                      <div class="age-bar" style="width: ${percentage}%;"></div>
-                    </div>
-                    <div class="age-percentage">${percentage}%</div>
-                  </div>
-                `).join('')}
-              </div>
-            </div>
-            <div class="top-locations">
-              <div class="chart-title">Top Locations</div>
-              <ul class="locations-list">
-                ${analytics.audienceDemographics.topLocations.map(location => 
-                  `<li>${location}</li>`
-                ).join('')}
-              </ul>
-            </div>
-          </div>
-        </div>
-        ` : ''}
-        
-        ${analytics.contentPerformance ? `
-        <div class="analytics-subsection">
-          <h4>Content Performance</h4>
-          <div class="performance-grid">
-            <div class="top-hashtags">
-              <div class="chart-title">Top Hashtags</div>
-              <div class="hashtag-cloud">
-                ${analytics.contentPerformance.topHashtags.map(tag => 
-                  `<span class="hashtag">${tag}</span>`
-                ).join('')}
-              </div>
-            </div>
-            <div class="engagement-types">
-              <div class="chart-title">Engagement by Content Type</div>
-              <div class="engagement-bars">
-                ${Object.entries(analytics.contentPerformance.engagementByType).map(([type, percentage]) => `
-                  <div class="engagement-bar-container">
-                    <div class="engagement-label">${type}</div>
-                    <div class="engagement-bar-wrapper">
-                      <div class="engagement-bar" style="width: ${percentage}%;"></div>
-                    </div>
-                    <div class="engagement-percentage">${percentage}%</div>
-                  </div>
-                `).join('')}
-              </div>
-            </div>
-          </div>
-        </div>
-        ` : ''}
-      </div>
-    `;
-  }
-
-  formatDate(timestamp) {
-    const date = new Date(timestamp);
-    const now = new Date();
-    const diffDays = Math.floor((now - date) / (1000 * 60 * 60 * 24));
-    
-    if (diffDays === 0) {
-      return 'Today';
-    } else if (diffDays === 1) {
-      return 'Yesterday';
-    } else if (diffDays < 7) {
-      return `${diffDays} days ago`;
-    } else {
-      return date.toLocaleDateString();
-    }
-  }
-
-  generatePost() {
-    const topic = document.getElementById('post-topic')?.value;
-    if (!topic) {
-      this.showToast('Please enter a topic', 'error');
-      return;
-    }
-
-    const generateButton = document.getElementById('generate-post-btn');
-    if (generateButton) {
+      // Set button to loading state
       this.setButtonLoading(generateButton, true, 'Generating...');
-    }
-
-    // Get selected options
-    const type = document.querySelector('.type-btn.active')?.getAttribute('data-type') || 'engagement';
-    const tone = document.querySelector('.tone-btn.active')?.getAttribute('data-tone') || 'professional';
-    const includeHashtags = document.getElementById('include-hashtags')?.checked || false;
-    const includeEmojis = document.getElementById('include-emojis')?.checked || false;
-    const includeCta = document.getElementById('include-cta')?.checked || false;
-
-    // Simulate API call
-    setTimeout(() => {
-      try {
-        const posts = this.getGeneratedSamplePosts(topic, type, tone, includeHashtags, includeEmojis, includeCta);
-        const container = document.getElementById('generated-posts-container');
-        
-        if (!container) {
-          throw new Error('Posts container not found');
-        }
-
-        // Clear previous posts
-        container.innerHTML = '';
-
-        // Add new posts
-        posts.forEach(post => {
-          const postElement = document.createElement('div');
-          postElement.className = 'generated-post slide-up';
-          postElement.innerHTML = `
-            <div class="post-preview">
-              <p>${post.content}</p>
-            </div>
-            <div class="post-metrics">
-              <span>Est. engagement: <strong>${post.engagement}</strong></span>
-              <span>Best time: <strong>${post.bestTime}</strong></span>
-            </div>
-            <div class="post-actions">
-              <button class="regenerate-post">Regenerate</button>
-              <button class="use-post">Use This</button>
-            </div>
-          `;
-
-          // Add event listeners
-          const useButton = postElement.querySelector('.use-post');
-          const regenerateButton = postElement.querySelector('.regenerate-post');
-
-          if (useButton) {
-            useButton.addEventListener('click', (e) => {
-              this.createRippleEffect(e);
-              this.useGeneratedPost(post.content);
-            });
+      
+      // Generate the post
+      this.generateSamplePost(topic, tone, type)
+        .then(post => {
+          // Update the post content area
+          const postContent = document.getElementById('post-content');
+          if (postContent) {
+            postContent.value = post;
+            
+            // Trigger input event to update character count
+            const inputEvent = new Event('input', { bubbles: true });
+            postContent.dispatchEvent(inputEvent);
+            
+            // Focus and select all text in the textarea
+            postContent.focus();
+            postContent.select();
           }
-
-          if (regenerateButton) {
-            regenerateButton.addEventListener('click', (e) => {
-              this.createRippleEffect(e);
-              this.regeneratePost(postElement, topic, type, tone, includeHashtags, includeEmojis, includeCta);
-            });
-          }
-
-          container.appendChild(postElement);
-        });
-
-        this.showToast('Posts generated successfully!', 'success');
-      } catch (error) {
-        console.error('Error generating posts:', error);
-        this.showToast('Failed to generate posts', 'error');
-      } finally {
-        if (generateButton) {
+          
+          // Show success toast
+          this.showToast('Post generated successfully!', 'success');
+        })
+        .catch(error => {
+          console.error('Error generating post:', error);
+          this.showToast('Failed to generate post. Please try again.', 'error');
+        })
+        .finally(() => {
+          // Reset button state
           this.setButtonLoading(generateButton, false);
-        }
-      }
-    }, 1500);
+        });
+    } catch (error) {
+      console.error('Error in generatePost:', error);
+      this.showToast('An unexpected error occurred', 'error');
+      this.setButtonLoading(generateButton, false);
+    }
   }
-
-  getGeneratedSamplePosts(topic, type, tone, hashtags, emojis, cta) {
-    const getRandomBestTime = () => {
-      const times = ['9:00 AM', '12:30 PM', '3:15 PM', '5:45 PM', '7:30 PM'];
-      return times[Math.floor(Math.random() * times.length)];
+  
+  async generateSamplePost(topic, tone, type) {
+    // Display loading animation while "fetching" from AI service
+    const postContent = document.getElementById('post-content');
+    if (postContent) {
+      postContent.value = 'Generating post...';
+    }
+    
+    // Simulate network delay with AI generation
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    
+    // In a real app, this would call an AI service API
+    // For demo purposes, we'll use predefined templates and combinations
+    
+    // Create intro phrases based on tone
+    const introsByTone = {
+      professional: [
+        "I'm pleased to share insights on",
+        "An important update regarding",
+        "Let's discuss the implications of",
+        "A professional perspective on"
+      ],
+      casual: [
+        "Hey everyone! Just thinking about",
+        "So I've been exploring",
+        "Wanted to share my thoughts on",
+        "Anyone else interested in"
+      ],
+      enthusiastic: [
+        "I'm incredibly excited about",
+        "Just discovered something amazing about",
+        "Can't contain my enthusiasm for",
+        "Absolutely loving the latest developments in"
+      ],
+      informative: [
+        "Here are the key facts about",
+        "An analysis of",
+        "Important information regarding",
+        "What you need to know about"
+      ]
     };
-
-    const posts = [];
-    const hashtagText = hashtags ? `#${topic.replace(/\s+/g, '')} #XAnalytics` : '';
-    const ctaText = cta ? 'What are your thoughts? 🤔' : '';
-
-    if (type === 'engagement') {
-      if (tone === 'professional') {
-        posts.push({
-          content: `${emojis ? '📊 ' : ''}Analyzing the latest trends in ${topic}. Key insights show significant growth potential and emerging opportunities. ${hashtagText} ${ctaText}`,
-          engagement: 'High',
-          bestTime: getRandomBestTime()
-        });
-      } else {
-        posts.push({
-          content: `${emojis ? '🔥 ' : ''}Just discovered some amazing things about ${topic}! Can't wait to share what I found. ${hashtagText} ${ctaText}`,
-          engagement: 'Very High',
-          bestTime: getRandomBestTime()
-        });
-      }
-    } else if (type === 'informative') {
-      if (tone === 'professional') {
-        posts.push({
-          content: `${emojis ? '💡 ' : ''}Three key insights about ${topic}:\n\n1. Market growth exceeds expectations\n2. Innovation drives adoption\n3. Community engagement is crucial\n\n${hashtagText} ${ctaText}`,
-          engagement: 'Medium',
-          bestTime: getRandomBestTime()
-        });
-      } else {
-        posts.push({
-          content: `${emojis ? '✨ ' : ''}Here's what nobody tells you about ${topic} - a thread 🧵\n\nMy top 3 discoveries that will change how you think about it!\n\n${hashtagText} ${ctaText}`,
-          engagement: 'High',
-          bestTime: getRandomBestTime()
-        });
-      }
-    }
-
-    // Add more variations
-    if (posts.length < 2) {
-      posts.push({
-        content: `${emojis ? '🎯 ' : ''}Exploring the impact of ${topic} on today's landscape. The data reveals fascinating patterns. ${hashtagText} ${ctaText}`,
-        engagement: 'Medium',
-        bestTime: getRandomBestTime()
+    
+    // Create hashtags related to the topic
+    const getHashtags = (topic) => {
+      const words = topic.toLowerCase().split(' ');
+      const hashtags = [];
+      
+      // Create hashtags from individual words and combinations
+      words.forEach(word => {
+        if (word.length > 3) {
+          hashtags.push(`#${word.replace(/[^a-z0-9]/g, '')}`);
+        }
       });
+      
+      // Add some generic hashtags based on the type and tone
+      if (type === 'question') hashtags.push('#ThoughtsOnThis', '#YourOpinion');
+      if (type === 'announcement') hashtags.push('#Announcement', '#Update');
+      if (type === 'discussion') hashtags.push('#LetsTalk', '#Discussion');
+      if (tone === 'professional') hashtags.push('#Professional', '#Industry');
+      
+      // Return a random selection of 2-3 hashtags
+      return hashtags
+        .filter((v, i, a) => a.indexOf(v) === i) // Remove duplicates
+        .sort(() => 0.5 - Math.random()) // Shuffle
+        .slice(0, Math.min(3, hashtags.length)) // Take 2-3
+        .join(' ');
+    };
+    
+    // Create call-to-actions based on post type
+    const ctasByType = {
+      discussion: [
+        "What are your thoughts on this?",
+        "I'd love to hear your perspective.",
+        "Let's continue this conversation!",
+        "Share your experiences below."
+      ],
+      question: [
+        "Has anyone else experienced this?",
+        "What's your take on this matter?",
+        "Any insights you can share?",
+        "What would you recommend in this situation?"
+      ],
+      announcement: [
+        "Stay tuned for more updates!",
+        "More details coming soon.",
+        "Let me know if you have any questions.",
+        "Looking forward to your feedback."
+      ],
+      opinion: [
+        "These are my personal views. What's your opinion?",
+        "I believe this approach makes sense. Your thoughts?",
+        "This perspective has worked for me. Does it resonate with you?",
+        "That's my take on the situation. Would love to hear yours."
+      ]
+    };
+    
+    // Select random components
+    const intro = introsByTone[tone][Math.floor(Math.random() * introsByTone[tone].length)];
+    const cta = ctasByType[type][Math.floor(Math.random() * ctasByType[type].length)];
+    const hashtags = getHashtags(topic);
+    
+    // Generate content based on type
+    let content = '';
+    switch (type) {
+      case 'discussion':
+        content = `${intro} ${topic}. I've noticed several interesting trends emerging in this area that could impact how we approach our strategies going forward. ${cta}`;
+        break;
+      case 'question':
+        content = `${intro} ${topic}? I'm curious about the different perspectives and experiences related to this subject. ${cta}`;
+        break;
+      case 'announcement':
+        content = `${intro} ${topic}! I'm thrilled to share this development that represents a significant milestone. ${cta}`;
+        break;
+      case 'opinion':
+        content = `${intro} ${topic}. Based on my experience, this represents a significant opportunity that shouldn't be overlooked. ${cta}`;
+        break;
+      default:
+        content = `${intro} ${topic}. ${cta}`;
     }
-
-    return posts;
+    
+    // Add hashtags if we have room (X character limit is 280)
+    const postWithHashtags = `${content}\n\n${hashtags}`;
+    if (postWithHashtags.length <= 280) {
+      return postWithHashtags;
+    }
+    
+    // If too long, return without hashtags
+    return content;
   }
 
   useGeneratedPost(content) {
@@ -2225,342 +1483,524 @@ class InteractionManager {
 
  // Method to handle posting a tweet
  handlePostNow() {
-   const postInput = document.querySelector('.post-input');
-   if (!postInput || !postInput.value.trim()) {
-     this.showToast('Please enter some text to post', 'error');
-     return;
-   }
-   
-   const postText = postInput.value.trim();
-   const characterCount = postText.length;
-   
-   if (characterCount > 280) {
-     this.showToast('Post exceeds 280 character limit', 'error');
-     return;
-   }
-   
-   // Show loading state
-   const postButton = document.querySelector('.post-now-button');
-   if (postButton) {
-     this.setButtonLoading(postButton, true, 'Posting...');
-   }
-   
-   // Simulate posting process
-   setTimeout(() => {
-     try {
-       // Simulate success
-       this.showToast('Post published successfully!', 'success');
-       
-       // Clear the input
-       postInput.value = '';
-       
-       // Update character counter
-       const counter = document.querySelector('.character-counter');
-       if (counter) {
-         counter.textContent = '0/280';
-       }
-     } catch (error) {
-       console.error('Error posting:', error);
-       this.showToast('Failed to publish post', 'error');
-     } finally {
-       // Reset button state
-       if (postButton) {
-         this.setButtonLoading(postButton, false, null, 'Post');
-       }
+   try {
+     const postContent = document.getElementById('post-content');
+     
+     if (!postContent) {
+       console.error('Post content textarea not found');
+       return;
      }
-   }, 1500);
+     
+     const content = postContent.value.trim();
+     
+     if (!content) {
+       this.shakeElement(postContent);
+       this.showToast('Please enter content for your post', 'error');
+       return;
+     }
+     
+     // Check character limit
+     if (content.length > 280) {
+       this.shakeElement(postContent);
+       this.showToast(`Post exceeds character limit (${content.length}/280)`, 'error');
+       return;
+     }
+     
+     // Show confirmation modal
+     this.showConfirmationModal(
+       'Post to X',
+       'Would you like to post this content to X now?',
+       () => {
+         // In a real implementation, this would use the X API to post
+         // For demo purposes, we'll simulate success
+         this.simulatePosting(content);
+       }
+     );
+   } catch (error) {
+     console.error('Error in handlePostNow:', error);
+     this.showToast('Failed to process post request', 'error');
+   }
  }
 
- // Method to cancel loading during analysis
- cancelLoading() {
+ simulatePosting(content) {
+   const postButton = document.querySelector('.post-now-button');
+   
    try {
-     if (this.isAnalyzing) {
-       // Clear timeout
-       if (this.loadingTimeout) {
-         clearTimeout(this.loadingTimeout);
-         this.loadingTimeout = null;
+     // Show loading state
+     if (postButton) {
+       this.setButtonLoading(postButton, true, 'Posting...');
+     }
+     
+     this.showToast('Connecting to X...', 'info');
+     
+     // Simulate network delay
+     setTimeout(() => {
+       try {
+         // Show success message
+         this.showToast('Posted successfully to X!', 'success');
+         
+         // Clear post content
+         const postContent = document.getElementById('post-content');
+         if (postContent) {
+           postContent.value = '';
+           
+           // Trigger input event to update character count
+           const inputEvent = new Event('input', { bubbles: true });
+           postContent.dispatchEvent(inputEvent);
+         }
+         
+         // Add to history (in a real app, this would store the actual post data)
+         this.addToHistory({
+           type: 'post',
+           content: content,
+           timestamp: new Date().toISOString()
+         });
+         
+         // Reset button state
+         if (postButton) {
+           this.setButtonLoading(postButton, false);
+         }
+       } catch (innerError) {
+         console.error('Error in post simulation completion:', innerError);
+         this.showToast('Failed to complete posting', 'error');
+         
+         if (postButton) {
+           this.setButtonLoading(postButton, false);
+         }
        }
-       
-       // Update state
-       this.isAnalyzing = false;
-       
-       // Hide loading UI
-       this.hideLoading();
-       
-       // Reset analyze button
-       const analyzeButton = document.getElementById('analyze-button');
-       if (analyzeButton) {
-         this.setButtonLoading(analyzeButton, false);
-       }
-       
-       // Remove cancel button
-       this.removeCancelButton();
-       
-       // Show toast
-       this.showToast('Analysis cancelled', 'info');
-       
-       console.log('Analysis cancelled by user');
+     }, 2000);
+   } catch (error) {
+     console.error('Error simulating post:', error);
+     this.showToast('Failed to process post', 'error');
+     
+     if (postButton) {
+       this.setButtonLoading(postButton, false);
+     }
+   }
+ }
+
+ addToHistory(item) {
+   try {
+     // Get existing history from localStorage
+     const history = JSON.parse(localStorage.getItem('history') || '[]');
+     
+     // Add new item at the beginning
+     history.unshift(item);
+     
+     // Limit history to 10 items
+     const limitedHistory = history.slice(0, 10);
+     
+     // Save back to localStorage
+     localStorage.setItem('history', JSON.stringify(limitedHistory));
+     
+     // If we're on the history tab, refresh it
+     const historyTab = document.querySelector('.tab-content[data-tab="history"]');
+     if (historyTab && historyTab.classList.contains('active')) {
+       this.updateHistoryTab();
      }
    } catch (error) {
-     console.error('Error cancelling analysis:', error);
-     // Force reset state in case of error
-     this.isAnalyzing = false;
-     this.forceHideLoading();
+     console.error('Error adding to history:', error);
    }
  }
 
- // Method to handle rate limit errors
- handleRateLimitError() {
-   // Get the current rate limit - for Chrome extension, would use chrome.runtime.sendMessage
-   const rateLimit = JSON.parse(localStorage.getItem('rateLimit') || '{"count": 20, "total": 25, "resetTime": ' + (Date.now() + 3600000) + '}');
-   
-   this.updateRateLimitUI(rateLimit);
-   
-   // Show a more detailed error message
-   this.showToast('API rate limit reached. Please try again later.', 'error');
- }
-
- // Method to check network connection
- checkNetworkConnection() {
-   if (!navigator.onLine) {
-     this.showToast('No internet connection. Please check your network.', 'error');
-   } else {
-     // If online, it might be a server issue
-     this.showToast('Server connection error. Please try again later.', 'error');
-   }
- }
-
- // Update the rate limit UI
- updateRateLimitUI(rateLimit) {
-   const rateLimitBar = document.getElementById('rate-limit-bar');
-   const rateLimitCount = document.getElementById('rate-limit-count');
-   
-   if (rateLimitBar && rateLimitCount) {
-     // Calculate percentage used
-     const totalLimit = rateLimit.total || 25;
-     const percentage = Math.min((rateLimit.count / totalLimit) * 100, 100);
-     rateLimitBar.style.width = `${percentage}%`;
-     
-     // Update count text
-     rateLimitCount.textContent = `${rateLimit.count}/${totalLimit}`;
-     
-     // Add warning color if approaching limit
-     if (percentage > 80) {
-       rateLimitBar.style.backgroundColor = '#ffa500';
-     } else if (percentage > 95) {
-       rateLimitBar.style.backgroundColor = '#f4212e';
-     } else {
-       rateLimitBar.style.backgroundColor = '#1d9bf0';
-     }
-   }
- }
-
- // Method to simulate a POST API call for generated content
- async postToAPI(content, endpoint = 'posts') {
-   // Simulate API delay with a promise
-   return new Promise((resolve, reject) => {
-     setTimeout(() => {
-       // Simulate 90% success rate
-       if (Math.random() < 0.9) {
-         resolve({
-           success: true,
-           data: {
-             id: 'post_' + Date.now(),
-             content: content,
-             timestamp: new Date().toISOString()
-           }
-         });
-       } else {
-         reject(new Error('Failed to send data to API'));
-       }
-     }, 1000);
-   });
- }
-
- // Handle clicks on media buttons
- handleMediaButtonClick(type) {
-   switch (type) {
-     case 'media':
-       this.showToast('Media upload feature coming soon', 'info');
-       break;
-     case 'emoji':
-       this.showToast('Emoji picker feature coming soon', 'info');
-       break;
-     case 'poll':
-       this.showToast('Poll creation feature coming soon', 'info');
-       break;
-     case 'schedule':
-       this.showToast('Post scheduling feature coming soon', 'info');
-       break;
-     default:
-       break;
-   }
- }
-
- // Handle share button functionality
- handleShare() {
-   // Check if we're in the results view
-   const resultsContainer = document.querySelector('.results-container');
-   if (resultsContainer && resultsContainer.style.display !== 'none') {
-     try {
-       const profileInput = document.getElementById('profile-input');
-       if (profileInput?.value) {
-         // Create a shareable link
-         const shareableText = `Check out this X profile analysis for @${profileInput.value.replace('@', '')}`;
-         
-         // Try to use the Web Share API if available
-         if (navigator.share) {
-           navigator.share({
-             title: 'X Profile Analysis',
-             text: shareableText,
-             url: `https://x.com/${profileInput.value.replace('@', '')}`
-           }).catch(err => {
-             console.error('Error sharing:', err);
-             this.showToast('Could not share profile analysis', 'error');
-           });
-         } else {
-           // Fallback to clipboard
-           navigator.clipboard.writeText(shareableText)
-             .then(() => this.showToast('Copied to clipboard!', 'success'))
-             .catch(() => this.showToast('Failed to copy to clipboard', 'error'));
-         }
-       } else {
-         this.showToast('No profile to share', 'error');
-       }
-     } catch (error) {
-       console.error('Share error:', error);
-       this.showToast('Failed to share profile analysis', 'error');
-     }
-   } else {
-     this.showToast('Analyze a profile first to share results', 'info');
-   }
- }
-
- // Helper method to save a profile to history
- saveToHistory(username) {
+ updateHistoryTab() {
    try {
-     // Get existing history or initialize a new one
-     const history = JSON.parse(localStorage.getItem('analysisHistory') || '[]');
+     const historyContainer = document.querySelector('.history-list');
      
-     // Check if profile already exists in history
-     const existingIndex = history.findIndex(item => item.username === username);
+     if (!historyContainer) {
+       console.warn('History container not found');
+       return;
+     }
      
-     if (existingIndex !== -1) {
-       // Update existing entry
-       history[existingIndex].timestamp = Date.now();
-     } else {
-       // Add new entry
-       history.unshift({
-         username,
-         timestamp: Date.now()
+     // Get history from localStorage
+     const history = JSON.parse(localStorage.getItem('history') || '[]');
+     
+     // Clear container
+     historyContainer.innerHTML = '';
+     
+     if (history.length === 0) {
+       // Show empty state
+       historyContainer.innerHTML = `
+         <div class="empty-state">
+           <div class="empty-icon">📝</div>
+           <p>No history yet</p>
+           <p class="empty-description">Your analyses and posts will appear here</p>
+         </div>
+       `;
+       return;
+     }
+     
+     // Add each history item
+     history.forEach((item, index) => {
+       const historyItem = document.createElement('div');
+       historyItem.className = 'history-item';
+       historyItem.setAttribute('data-index', index);
+       
+       // Format based on type
+       if (item.type === 'post') {
+         historyItem.innerHTML = `
+           <div class="history-content">
+             <div class="history-title">
+               <span class="history-type-badge post">Post</span>
+               <span class="history-date">${this.formatDate(new Date(item.timestamp))}</span>
+             </div>
+             <div class="history-details">
+               <p>${item.content}</p>
+             </div>
+           </div>
+           <div class="history-actions">
+             <button class="history-action reuse-post" data-action="reuse" data-index="${index}">
+               <svg viewBox="0 0 24 24" width="16" height="16">
+                 <path fill="currentColor" d="M4 2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4v4l-4-4H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm0 2v12h8.1l1.9 1.9V16h4V4H4z"/>
+               </svg>
+               Reuse
+             </button>
+             <button class="history-action remove-history" data-action="remove" data-index="${index}">
+               <svg viewBox="0 0 24 24" width="16" height="16">
+                 <path fill="currentColor" d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+               </svg>
+               Remove
+             </button>
+           </div>
+         `;
+       } else {
+         // Analysis item
+         historyItem.innerHTML = `
+           <div class="history-content">
+             <div class="history-title">
+               <span class="history-type-badge analysis">Analysis</span>
+               <span class="history-date">${this.formatDate(new Date(item.timestamp))}</span>
+             </div>
+             <div class="history-details">
+               <p>${item.username ? `@${item.username}` : 'Profile analysis'}</p>
+             </div>
+           </div>
+           <div class="history-actions">
+             <button class="history-action" data-action="view" data-index="${index}">
+               <svg viewBox="0 0 24 24" width="16" height="16">
+                 <path fill="currentColor" d="M12 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0 8a5 5 0 0 1-5-5 5 5 0 0 1 5-5 5 5 0 0 1 5 5 5 5 0 0 1-5 5m0-12.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5z"/>
+               </svg>
+               View
+             </button>
+             <button class="history-action remove-history" data-action="remove" data-index="${index}">
+               <svg viewBox="0 0 24 24" width="16" height="16">
+                 <path fill="currentColor" d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+               </svg>
+               Remove
+             </button>
+           </div>
+         `;
+       }
+       
+       // Add with animation
+       setTimeout(() => {
+         historyContainer.appendChild(historyItem);
+         setTimeout(() => {
+           historyItem.classList.add('visible');
+         }, 50);
+       }, index * 50);
+     });
+     
+     // Add event listeners
+     setTimeout(() => {
+       // View action
+       document.querySelectorAll('.history-action[data-action="view"]').forEach(button => {
+         button.addEventListener('click', (e) => {
+           this.createRippleEffect(e);
+           const index = parseInt(button.getAttribute('data-index'), 10);
+           this.viewHistoryItem(index);
+         });
        });
        
-       // Limit history to 20 items
-       if (history.length > 20) {
-         history.pop();
-       }
-     }
-     
-     // Save updated history
-     localStorage.setItem('analysisHistory', JSON.stringify(history));
-     
-     // Update history UI if we're on that tab
-     if (document.querySelector('.tab-button[data-tab="history"]')?.classList.contains('active')) {
-       this.loadCachedHistory();
-     }
+       // Reuse action
+       document.querySelectorAll('.history-action[data-action="reuse"]').forEach(button => {
+         button.addEventListener('click', (e) => {
+           this.createRippleEffect(e);
+           const index = parseInt(button.getAttribute('data-index'), 10);
+           this.reuseHistoryItem(index);
+         });
+       });
+       
+       // Remove action
+       document.querySelectorAll('.history-action[data-action="remove"]').forEach(button => {
+         button.addEventListener('click', (e) => {
+           this.createRippleEffect(e);
+           const index = parseInt(button.getAttribute('data-index'), 10);
+           this.removeHistoryItem(index);
+         });
+       });
+     }, history.length * 50 + 100);
    } catch (error) {
-     console.error('Error saving to history:', error);
+     console.error('Error updating history tab:', error);
    }
  }
 
- // Initialize all media button handlers
- initializeMediaButtons() {
-   document.querySelectorAll('.media-btn').forEach(button => {
-     button.addEventListener('click', e => {
-       this.createRippleEffect(e);
-       
-       // Determine button type based on icon or title
-       let type = 'media';
-       if (button.title.includes('Emoji')) type = 'emoji';
-       else if (button.title.includes('Poll')) type = 'poll';
-       else if (button.title.includes('Schedule')) type = 'schedule';
-       
-       this.handleMediaButtonClick(type);
-     });
-   });
-   
-   // Initialize footer button handlers
-   document.querySelector('.help-button')?.addEventListener('click', e => {
-     this.createRippleEffect(e);
-     this.showToast('Help documentation coming soon!', 'info');
-   });
-   
-   document.querySelector('.feedback-button')?.addEventListener('click', e => {
-     this.createRippleEffect(e);
-     this.showToast('Feedback form coming soon!', 'info');
-   });
-   
-   document.querySelector('.share-button')?.addEventListener('click', e => {
-     this.createRippleEffect(e);
-     this.handleShare();
-   });
+ formatDate(date) {
+   try {
+     const now = new Date();
+     const diff = Math.floor((now - date) / 1000); // seconds difference
+     
+     if (diff < 60) {
+       return 'Just now';
+     } else if (diff < 3600) {
+       const minutes = Math.floor(diff / 60);
+       return `${minutes} minute${minutes > 1 ? 's' : ''} ago`;
+     } else if (diff < 86400) {
+       const hours = Math.floor(diff / 3600);
+       return `${hours} hour${hours > 1 ? 's' : ''} ago`;
+     } else if (diff < 604800) {
+       const days = Math.floor(diff / 86400);
+       return `${days} day${days > 1 ? 's' : ''} ago`;
+     } else {
+       return date.toLocaleDateString();
+     }
+   } catch (error) {
+     console.error('Error formatting date:', error);
+     return 'Unknown date';
+   }
  }
 
- // Event handler for ensuring a DOM element exists, with error handling
- ensureButtonFunctionality(buttonId, callback) {
-   const button = document.getElementById(buttonId);
-   if (button) {
-     // Remove any existing listeners to prevent duplicates
-     const newButton = button.cloneNode(true);
-     button.parentNode.replaceChild(newButton, button);
+ viewHistoryItem(index) {
+   try {
+     const history = JSON.parse(localStorage.getItem('history') || '[]');
+     const item = history[index];
      
-     newButton.addEventListener('click', function(e) {
-       // Create ripple effect
-       this.createRippleEffect(e);
+     if (!item) {
+       this.showToast('History item not found', 'error');
+       return;
+     }
+     
+     if (item.type === 'analysis') {
+       // Switch to analyze tab
+       this.switchTab('analyze-tab', 'analyze');
        
-       // Execute callback
-       callback();
-     }.bind(this));
+       // Fill profile input if available
+       if (item.username) {
+         const profileInput = document.getElementById('profile-input');
+         if (profileInput) {
+           profileInput.value = `@${item.username}`;
+           
+           // Trigger analysis
+           setTimeout(() => {
+             this.handleAnalyze();
+           }, 300);
+         }
+       }
+     }
      
-     return true;
-   } else {
-     console.warn(`Button with ID "${buttonId}" not found in the DOM`);
-     return false;
+     this.showToast('History item loaded', 'success');
+   } catch (error) {
+     console.error('Error viewing history item:', error);
+     this.showToast('Failed to load history item', 'error');
+   }
+ }
+
+ reuseHistoryItem(index) {
+   try {
+     const history = JSON.parse(localStorage.getItem('history') || '[]');
+     const item = history[index];
+     
+     if (!item) {
+       this.showToast('History item not found', 'error');
+       return;
+     }
+     
+     if (item.type === 'post') {
+       // Switch to compose tab
+       this.switchTab('compose-tab', 'compose');
+       
+       // Fill post content
+       const postContent = document.getElementById('post-content');
+       if (postContent && item.content) {
+         postContent.value = item.content;
+         
+         // Trigger input event to update character count
+         const inputEvent = new Event('input', { bubbles: true });
+         postContent.dispatchEvent(inputEvent);
+         
+         // Focus and select
+         postContent.focus();
+         postContent.select();
+       }
+       
+       this.showToast('Post content loaded', 'success');
+     }
+   } catch (error) {
+     console.error('Error reusing history item:', error);
+     this.showToast('Failed to load post content', 'error');
+   }
+ }
+
+ removeHistoryItem(index) {
+   try {
+     // Show confirmation
+     this.showConfirmationModal(
+       'Remove Item',
+       'Are you sure you want to remove this item from your history?',
+       () => {
+         try {
+           // Get history
+           const history = JSON.parse(localStorage.getItem('history') || '[]');
+           
+           // Remove item
+           history.splice(index, 1);
+           
+           // Save back to localStorage
+           localStorage.setItem('history', JSON.stringify(history));
+           
+           // Update history tab
+           this.updateHistoryTab();
+           
+           this.showToast('Item removed from history', 'success');
+         } catch (error) {
+           console.error('Error removing history item:', error);
+           this.showToast('Failed to remove item', 'error');
+         }
+       }
+     );
+   } catch (error) {
+     console.error('Error initiating history item removal:', error);
+     this.showToast('Failed to process removal request', 'error');
    }
  }
 
  // Add a cancel button to the loading overlay
  addCancelButton() {
-   try {
-     const overlay = document.querySelector('.loading-overlay');
-     if (!overlay) return;
-     
-     // Don't add a second cancel button if one exists
-     if (overlay.querySelector('.cancel-analysis-button')) return;
-     
-     const cancelButton = document.createElement('button');
-     cancelButton.className = 'cancel-analysis-button';
-     cancelButton.textContent = 'Cancel';
-     cancelButton.addEventListener('click', () => this.cancelLoading());
-     
-     const loadingContent = overlay.querySelector('.loading-content');
-     if (loadingContent) {
-       loadingContent.appendChild(cancelButton);
-     }
-   } catch (error) {
-     console.error('Error adding cancel button:', error);
+   const cancelButton = document.getElementById('cancel-analysis-button');
+   if (cancelButton) {
+     cancelButton.addEventListener('click', () => {
+       this.cancelLoading();
+     });
    }
  }
 
  // Remove the cancel button
  removeCancelButton() {
-   try {
-     const cancelButton = document.querySelector('.cancel-analysis-button');
-     if (cancelButton && cancelButton.parentNode) {
-       cancelButton.parentNode.removeChild(cancelButton);
+   const cancelButton = document.getElementById('cancel-analysis-button');
+   if (cancelButton) {
+     // Clone to remove event listeners
+     const newCancelButton = cancelButton.cloneNode(true);
+     if (cancelButton.parentNode) {
+       cancelButton.parentNode.replaceChild(newCancelButton, cancelButton);
      }
+   }
+ }
+
+ showConfirmationModal(title, message, confirmCallback) {
+   return new Promise((resolve) => {
+     try {
+       // Create modal element
+       const modal = document.createElement('div');
+       modal.className = 'modal confirmation-modal';
+       modal.innerHTML = `
+         <div class="modal-content">
+           <div class="modal-header">
+             <h3>${title}</h3>
+             <button class="close-modal" aria-label="Close">×</button>
+           </div>
+           <div class="modal-body">
+             <p>${message}</p>
+           </div>
+           <div class="modal-footer">
+             <button class="cancel-button">Cancel</button>
+             <button class="confirm-button primary-button">Confirm</button>
+           </div>
+         </div>
+       `;
+       
+       // Add to body
+       document.body.appendChild(modal);
+       
+       // Add fade-in effect
+       setTimeout(() => modal.classList.add('visible'), 10);
+       
+       // Define event handlers
+       const handleClose = () => {
+         modal.classList.remove('visible');
+         setTimeout(() => {
+           modal.remove();
+           resolve(false);
+         }, 300);
+       };
+       
+       const handleConfirm = () => {
+         modal.classList.remove('visible');
+         setTimeout(() => {
+           modal.remove();
+           if (confirmCallback) {
+             confirmCallback();
+           }
+           resolve(true);
+         }, 300);
+       };
+       
+       // Add event listeners
+       modal.querySelector('.close-modal')?.addEventListener('click', handleClose);
+       modal.querySelector('.cancel-button')?.addEventListener('click', handleClose);
+       modal.querySelector('.confirm-button')?.addEventListener('click', handleConfirm);
+       
+       // Close on click outside modal content
+       modal.addEventListener('click', (e) => {
+         if (e.target === modal) {
+           handleClose();
+         }
+       });
+       
+       // Close on Escape key
+       document.addEventListener('keydown', function escHandler(e) {
+         if (e.key === 'Escape') {
+           document.removeEventListener('keydown', escHandler);
+           handleClose();
+         }
+       });
+     } catch (error) {
+       console.error('Error showing confirmation modal:', error);
+       resolve(false);
+     }
+   });
+ }
+
+ cancelLoading() {
+   try {
+     console.log('Cancelling loading process...');
+     
+     // Stop any active loading processes
+     if (this.loadingAbortController) {
+       this.loadingAbortController.abort();
+       this.loadingAbortController = null;
+     }
+     
+     // Clear any loading timeouts
+     if (this.loadingTimeout) {
+       clearTimeout(this.loadingTimeout);
+       this.loadingTimeout = null;
+     }
+     
+     // Hide loading overlay
+     const loadingOverlay = document.querySelector('.loading-overlay');
+     if (loadingOverlay) {
+       loadingOverlay.classList.add('hidden');
+     }
+     
+     // Reset analyze button state
+     const analyzeButton = document.getElementById('analyze-button');
+     if (analyzeButton) {
+       this.setButtonLoading(analyzeButton, false);
+     }
+     
+     // Reset any other loading buttons
+     document.querySelectorAll('.button-loading').forEach(button => {
+       this.setButtonLoading(button, false);
+     });
+     
+     // Show toast notification
+     this.showToast('Operation cancelled', 'info');
+     
+     // Reset internal state
+     this.isLoading = false;
+     this.loadingProgress = 0;
    } catch (error) {
-     console.error('Error removing cancel button:', error);
+     console.error('Error cancelling loading:', error);
    }
  }
 }

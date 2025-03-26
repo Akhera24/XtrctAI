@@ -8,33 +8,93 @@ import { ProfileFormatter } from './utils/profileFormatter.js';
 
 class PopupController {
   constructor() {
+    console.log('Initializing PopupController');
+    
     // Initialize services and managers
-    this.iconManager = new IconManager();
-    this.analyticsService = new AnalyticsService();
-    this.uiManager = new UIManager();
+    try {
+      this.iconManager = new IconManager();
+      console.log('IconManager initialized');
+    } catch (error) {
+      console.error('Failed to initialize IconManager:', error);
+    }
+    
+    try {
+      this.analyticsService = new AnalyticsService();
+      console.log('AnalyticsService initialized');
+    } catch (error) {
+      console.error('Failed to initialize AnalyticsService:', error);
+    }
+    
+    try {
+      this.uiManager = new UIManager();
+      console.log('UIManager initialized');
+    } catch (error) {
+      console.error('Failed to initialize UIManager:', error);
+      // Create a minimal UI manager if the real one fails
+      this.uiManager = {
+        showToast: (msg) => console.log('Toast:', msg),
+        showError: (msg) => console.error('Error:', msg),
+        showLoading: (msg) => console.log('Loading:', msg),
+        hideLoading: () => console.log('Hide loading'),
+        setButtonLoading: () => console.log('Button loading toggled')
+      };
+    }
+    
     this.currentProfile = null;
     this.isAnalyzing = false;
     
     // Cache DOM elements for better performance
-    this.domElements = {
-      profileInput: document.getElementById('profile-input'),
-      clearInput: document.getElementById('clear-input'),
-      analyzeButton: document.getElementById('analyze-button'),
-      resultsContainer: document.querySelector('.results-container'),
-      loadingOverlay: document.querySelector('.loading-overlay'),
-      rateLimitBar: document.getElementById('rate-limit-bar'),
-      rateLimitCount: document.getElementById('rate-limit-count'),
-      retryButton: document.getElementById('retry-button'),
-      clearCacheButton: document.getElementById('clear-cache-button'),
-      tabButtons: document.querySelectorAll('.tab-button'),
-      postInput: document.querySelector('.post-input'),
-      characterCounter: document.querySelector('.character-counter'),
-      postNowButton: document.querySelector('.post-now-button'),
-      generatePostButton: document.getElementById('generate-post-btn')
-    };
+    console.log('Caching DOM elements');
+    this.cacheDomElements();
     
     // Theme settings
     this.theme = 'light';
+    console.log('PopupController constructor complete');
+  }
+  
+  /**
+   * Cache DOM elements for better performance and reliability
+   */
+  cacheDomElements() {
+    this.domElements = {};
+    
+    // Define the elements to cache with a fallback mechanism
+    const elementsToCatch = [
+      { key: 'profileInput', selector: '#profile-input' },
+      { key: 'clearInput', selector: '#clear-input' },
+      { key: 'analyzeButton', selector: '#analyze-button' },
+      { key: 'resultsContainer', selector: '.results-container' },
+      { key: 'loadingOverlay', selector: '.loading-overlay' },
+      { key: 'rateLimitBar', selector: '#rate-limit-bar' },
+      { key: 'rateLimitCount', selector: '#rate-limit-count' },
+      { key: 'retryButton', selector: '#retry-button' },
+      { key: 'clearCacheButton', selector: '#clear-cache-button' },
+      { key: 'postInput', selector: '.post-input' },
+      { key: 'characterCounter', selector: '.character-counter' },
+      { key: 'postNowButton', selector: '.post-now-button' },
+      { key: 'generatePostButton', selector: '#generate-post-btn' }
+    ];
+    
+    // Try to find all elements
+    elementsToCatch.forEach(({ key, selector }) => {
+      try {
+        const element = document.querySelector(selector);
+        this.domElements[key] = element;
+        console.log(`DOM element '${key}' ${element ? 'found' : 'NOT found'} using selector: ${selector}`);
+      } catch (error) {
+        console.error(`Error finding element '${key}' with selector '${selector}':`, error);
+        this.domElements[key] = null;
+      }
+    });
+    
+    // Special handling for tab buttons (array of elements)
+    try {
+      this.domElements.tabButtons = document.querySelectorAll('.tab-button');
+      console.log(`Found ${this.domElements.tabButtons.length} tab buttons`);
+    } catch (error) {
+      console.error('Error finding tab buttons:', error);
+      this.domElements.tabButtons = [];
+    }
   }
 
   /**
@@ -101,115 +161,140 @@ class PopupController {
    * Initialize all event listeners for the popup
    */
   initializeEventListeners() {
-    // Profile input events
+    console.log('Initializing event listeners');
+    
+    // Theme toggle
+    const themeToggle = document.getElementById('theme-toggle');
+    if (themeToggle) {
+      console.log('Theme toggle button found, adding event listener');
+      themeToggle.addEventListener('click', () => this.toggleTheme());
+    } else {
+      console.warn('Theme toggle button not found in DOM');
+    }
+    
+    // Profile input
     if (this.domElements.profileInput) {
-      this.domElements.profileInput.addEventListener('input', this.handleProfileInputChange.bind(this));
+      console.log('Profile input found, adding event listeners');
+      this.domElements.profileInput.addEventListener('input', (e) => this.handleProfileInputChange(e));
       this.domElements.profileInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter' && !this.domElements.analyzeButton.disabled) {
+        if (e.key === 'Enter' && !this.isAnalyzing) {
+          console.log('Enter key pressed in profile input, triggering analyze');
           this.handleAnalyzeClick();
         }
       });
+    } else {
+      console.warn('Profile input not found in DOM');
     }
     
     // Clear input button
     if (this.domElements.clearInput) {
-      this.domElements.clearInput.addEventListener('click', this.handleClearInputClick.bind(this));
+      console.log('Clear input button found, adding event listener');
+      this.domElements.clearInput.addEventListener('click', () => {
+        if (this.domElements.profileInput) {
+          this.domElements.profileInput.value = '';
+          this.domElements.clearInput.classList.add('hidden');
+          this.domElements.analyzeButton.setAttribute('disabled', 'disabled');
+        }
+      });
+    } else {
+      console.warn('Clear input button not found in DOM');
     }
     
     // Analyze button
+    console.log('Looking for analyze button with id:', 'analyze-button');
+    const analyzeButton = document.getElementById('analyze-button');
+    console.log('Direct DOM query for analyze button:', analyzeButton);
+    
     if (this.domElements.analyzeButton) {
-      this.domElements.analyzeButton.addEventListener('click', this.handleAnalyzeClick.bind(this));
+      console.log('Analyze button found in domElements, adding event listener');
+      this.domElements.analyzeButton.addEventListener('click', () => {
+        console.log('Analyze button clicked via domElements reference');
+        this.handleAnalyzeClick();
+      });
+    } else if (analyzeButton) {
+      console.log('Analyze button found via direct DOM query, adding event listener');
+      analyzeButton.addEventListener('click', () => {
+        console.log('Analyze button clicked via direct DOM query');
+        this.handleAnalyzeClick();
+      });
+      this.domElements.analyzeButton = analyzeButton; // Update reference
+    } else {
+      console.error('Analyze button not found in DOM');
+      // Attempt to find by other selectors
+      const possibleButtons = Array.from(document.querySelectorAll('button'));
+      console.log('All buttons in DOM:', possibleButtons.map(b => ({
+        id: b.id,
+        classes: b.className,
+        text: b.textContent.trim()
+      })));
     }
+    
+    // Debug - log all buttons and their IDs
+    console.log('Button elements:', {
+      analyzeButton: document.getElementById('analyze-button'),
+      allButtons: Array.from(document.querySelectorAll('button')).map(b => ({
+        id: b.id,
+        classes: b.className,
+        text: b.textContent.trim()
+      }))
+    });
     
     // Retry button
     if (this.domElements.retryButton) {
-      this.domElements.retryButton.addEventListener('click', this.handleRetryClick.bind(this));
+      console.log('Retry button found, adding event listener');
+      this.domElements.retryButton.addEventListener('click', () => this.handleRetryClick());
+    } else {
+      console.warn('Retry button not found in DOM');
     }
     
     // Clear cache button
     if (this.domElements.clearCacheButton) {
-      this.domElements.clearCacheButton.addEventListener('click', this.handleClearCacheClick.bind(this));
+      console.log('Clear cache button found, adding event listener');
+      this.domElements.clearCacheButton.addEventListener('click', () => this.handleClearCacheClick());
+    } else {
+      console.warn('Clear cache button not found in DOM');
     }
     
-    // Tab navigation
-    this.domElements.tabButtons.forEach(button => {
-      button.addEventListener('click', (e) => {
-        this.switchTab(e.currentTarget.dataset.tab);
+    // Tab buttons
+    if (this.domElements.tabButtons && this.domElements.tabButtons.length) {
+      console.log('Tab buttons found, adding event listeners');
+      this.domElements.tabButtons.forEach(button => {
+        button.addEventListener('click', (e) => {
+          const tabId = e.currentTarget.dataset.tab;
+          if (tabId) {
+            this.switchTab(tabId);
+          }
+        });
       });
-    });
+    } else {
+      console.warn('Tab buttons not found in DOM');
+    }
     
-    // Character counter for post composer
+    // Post input character counter
     if (this.domElements.postInput && this.domElements.characterCounter) {
-      this.domElements.postInput.addEventListener('input', this.updateCharacterCount.bind(this));
+      console.log('Post input and character counter found, adding event listener');
+      this.domElements.postInput.addEventListener('input', () => this.updateCharacterCount());
+    } else {
+      console.warn('Post input or character counter not found in DOM');
     }
     
     // Post Now button
     if (this.domElements.postNowButton) {
-      this.domElements.postNowButton.addEventListener('click', this.handlePostNowClick.bind(this));
+      console.log('Post Now button found, adding event listener');
+      this.domElements.postNowButton.addEventListener('click', () => this.handlePostNow());
+    } else {
+      console.warn('Post Now button not found in DOM');
     }
     
     // Generate Post button
     if (this.domElements.generatePostButton) {
-      this.domElements.generatePostButton.addEventListener('click', this.handleGeneratePostClick.bind(this));
-    }
-    
-    // Theme toggle button
-    const themeToggle = document.querySelector('.theme-toggle');
-    if (themeToggle) {
-      themeToggle.addEventListener('click', this.toggleTheme.bind(this));
-    }
-    
-    // Home button (reset UI)
-    const homeButton = document.querySelector('.home-button');
-    if (homeButton) {
-      homeButton.addEventListener('click', this.resetToHome.bind(this));
-    }
-    
-    // Post type and tone buttons
-    document.querySelectorAll('.type-btn').forEach(button => {
-      button.addEventListener('click', (e) => {
-        document.querySelectorAll('.type-btn').forEach(btn => btn.classList.remove('active'));
-        e.currentTarget.classList.add('active');
-      });
-    });
-    
-    document.querySelectorAll('.tone-btn').forEach(button => {
-      button.addEventListener('click', (e) => {
-        document.querySelectorAll('.tone-btn').forEach(btn => btn.classList.remove('active'));
-        e.currentTarget.classList.add('active');
-      });
-    });
-    
-    // Footer action buttons (Help, Feedback, Share)
-    const helpButton = document.querySelector('.help-button');
-    if (helpButton) {
-      helpButton.addEventListener('click', this.showHelpCenter.bind(this));
-    }
-    
-    const feedbackButton = document.querySelector('.feedback-button');
-    if (feedbackButton) {
-      feedbackButton.addEventListener('click', this.showFeedbackForm.bind(this));
-    }
-    
-    const shareButton = document.querySelector('.share-button');
-    if (shareButton) {
-      shareButton.addEventListener('click', this.handleShareClick.bind(this));
-    }
-    
-    // Load current tab from URL hash or localStorage
-    const hash = window.location.hash.replace('#', '');
-    if (hash && document.querySelector(`.tab-button[data-tab="${hash}"]`)) {
-      setTimeout(() => this.switchTab(hash), 100);
+      console.log('Generate Post button found, adding event listener');
+      this.domElements.generatePostButton.addEventListener('click', () => this.handleGeneratePost());
     } else {
-      try {
-        const lastTab = localStorage.getItem('currentTab');
-        if (lastTab && document.querySelector(`.tab-button[data-tab="${lastTab}"]`)) {
-          setTimeout(() => this.switchTab(lastTab), 100);
-        }
-      } catch (e) {
-        console.warn('Could not restore last active tab:', e);
-      }
+      console.warn('Generate Post button not found in DOM');
     }
+    
+    console.log('Event listeners initialization complete');
   }
   
   /**
@@ -229,75 +314,105 @@ class PopupController {
   }
   
   /**
-   * Handle clear input button click
-   */
-  handleClearInputClick() {
-    this.uiManager.createRippleEffect(event);
-    
-    if (this.domElements.profileInput) {
-      this.domElements.profileInput.value = '';
-      this.domElements.profileInput.focus();
-      this.domElements.clearInput.style.display = 'none';
-      
-      if (this.domElements.analyzeButton) {
-        this.domElements.analyzeButton.disabled = true;
-        this.domElements.analyzeButton.classList.remove('active');
-      }
-    }
-  }
-  
-  /**
    * Handle analyze button click
    */
   async handleAnalyzeClick() {
+    console.log('===== ANALYZE BUTTON CLICKED =====');
+    
     if (this.isAnalyzing) {
+      console.log('Analysis already in progress, ignoring click');
       this.uiManager.showToast('Analysis already in progress', 'info');
-    return;
-  }
+      return;
+    }
   
     const profileInput = this.domElements.profileInput;
+    console.log('Profile input element:', profileInput);
+    console.log('Profile input value:', profileInput?.value);
+    
     if (!profileInput || !profileInput.value.trim()) {
+      console.log('Empty profile input, showing error');
       this.uiManager.showToast('Please enter a profile handle or URL', 'error');
+      this.iconManager.addShakeAnimation(profileInput);
       return;
     }
     
     try {
       this.isAnalyzing = true;
+      console.log('Setting isAnalyzing to true');
+      
+      // Log the analysis attempt
+      console.log('Starting analysis for:', profileInput.value);
       
       // Update UI to show loading state
-      this.uiManager.setButtonLoading(this.domElements.analyzeButton, true, 'Analyzing...');
+      console.log('Updating UI to show loading state');
+      this.setAnalyzeButtonLoadingState(true);
       this.uiManager.showLoading('Starting analysis...');
       
       // Validate input
       const username = this.extractUsername(profileInput.value);
+      console.log('Extracted username:', username);
+      
       if (!username) {
+        console.error('Invalid profile format');
         throw new Error('Invalid profile format. Please use @handle or full profile URL.');
       }
       
       // Show progressive loading animation
-      await this.showProgressiveLoading();
+      console.log('Starting progressive loading animation');
+      const loadingPromise = this.showProgressiveLoading();
       
-      // Request analysis from background script
-      const response = await this.requestProfileAnalysis(username);
+      // Request analysis from background script with timeout
+      console.log('Sending analysis request to background script for:', username);
+      const analysisPromise = this.requestProfileAnalysis(username);
+      
+      // Set a timeout for the request
+      console.log('Setting up request timeout');
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => {
+          console.error('Analysis request timed out');
+          reject(new Error('Analysis request timed out. Please try again.'));
+        }, 20000);
+      });
+      
+      // Wait for loading animation to start
+      console.log('Waiting for loading animation to start');
+      await loadingPromise;
+      
+      // Wait for the first promise to resolve (either analysis or timeout)
+      console.log('Waiting for analysis response or timeout');
+      const response = await Promise.race([analysisPromise, timeoutPromise]);
+      
+      console.log('Analysis response received:', response);
       
       if (response.success) {
+        console.log('Analysis successful');
         // Save current profile data
         this.currentProfile = response.data;
         
         // Update UI with results
+        console.log('Updating UI with results');
         this.updateResultsDisplay(response.data);
         
         // Update rate limit display
+        console.log('Updating rate limit display');
         this.updateRateLimitDisplay(response.rateLimit);
         
         // Save to history
+        console.log('Saving to history');
         this.saveToHistory(username);
         
-        // Show success message
-        this.uiManager.showToast(response.fromCache ? 
-          'Analysis loaded from cache' : 
-          'Analysis completed successfully!', 'success');
+        // Show success message with info if it's mock data
+        if (response.data.isMockData) {
+          console.log('Using mock data');
+          this.uiManager.showToast('Using sample data for demonstration', 'warning');
+        } else {
+          console.log('Using real data, from cache:', response.fromCache);
+          this.uiManager.showToast(response.fromCache ? 
+            'Analysis loaded from cache' : 
+            'Analysis completed successfully!', 'success');
+        }
       } else {
+        console.error('Analysis failed:', response.error);
         throw new Error(response.error || 'Analysis failed');
       }
     } catch (error) {
@@ -306,13 +421,16 @@ class PopupController {
       
       // Enable retry button
       if (this.domElements.retryButton) {
+        console.log('Enabling retry button');
         this.domElements.retryButton.disabled = false;
       }
     } finally {
       // Reset UI state
+      console.log('Resetting UI state');
       this.isAnalyzing = false;
-      this.uiManager.setButtonLoading(this.domElements.analyzeButton, false);
+      this.setAnalyzeButtonLoadingState(false);
       this.uiManager.hideLoading();
+      console.log('===== ANALYZE PROCESS COMPLETE =====');
     }
   }
   
@@ -347,7 +465,7 @@ class PopupController {
   /**
    * Handle "Post Now" button click
    */
-  handlePostNowClick() {
+  handlePostNow() {
     this.uiManager.createRippleEffect(event);
     
     const postInput = this.domElements.postInput;
@@ -386,7 +504,7 @@ class PopupController {
   /**
    * Handle Generate Post button click
    */
-  handleGeneratePostClick() {
+  handleGeneratePost() {
     const postTopic = document.getElementById('post-topic')?.value;
     if (!postTopic) {
       this.uiManager.showToast('Please enter a topic', 'error');
@@ -570,50 +688,202 @@ class PopupController {
   }
   
   /**
-   * Show progressive loading animation
+   * Show a progressive loading animation to keep user engaged during analysis
    */
   async showProgressiveLoading() {
-    const stages = [
-      { message: 'Connecting to API...', progress: 15 },
-      { message: 'Authenticating...', progress: 25 },
-      { message: 'Fetching profile data...', progress: 40 },
-      { message: 'Analyzing metrics...', progress: 60 },
-      { message: 'Processing engagement patterns...', progress: 75 },
-      { message: 'Generating insights...', progress: 90 }
-    ];
-
-    for (const stage of stages) {
-      this.uiManager.updateLoadingStatus(stage.message, stage.progress);
-      // Randomize the delay slightly to make it feel more realistic
-      const delay = 300 + Math.random() * 200;
-      await new Promise(resolve => setTimeout(resolve, delay));
-    }
-    
-    // Final state
-    this.uiManager.updateLoadingStatus('Finalizing analysis...', 100);
+    return new Promise(resolve => {
+      const loadingOverlay = document.querySelector('.loading-overlay');
+      
+      if (!loadingOverlay) {
+        console.warn('Loading overlay element not found');
+        resolve();
+        return;
+      }
+      
+      console.log('Starting progressive loading animation');
+      
+      // Make sure loading overlay is visible and reset its contents
+      loadingOverlay.classList.remove('hidden');
+      
+      // Get required elements
+      const loadingText = loadingOverlay.querySelector('.loading-text');
+      const progressBar = loadingOverlay.querySelector('.progress-bar');
+      const cancelButton = loadingOverlay.querySelector('#cancel-loading');
+      
+      console.log('Loading overlay elements:', {
+        overlay: loadingOverlay,
+        text: loadingText,
+        progressBar: progressBar,
+        cancelButton: cancelButton
+      });
+      
+      // Set up cancel button
+      if (cancelButton) {
+        cancelButton.addEventListener('click', () => {
+          console.log('Cancel button clicked');
+          if (this.loadingIntervals) {
+            clearInterval(this.loadingIntervals.message);
+            if (this.loadingIntervals.progress) {
+              clearInterval(this.loadingIntervals.progress);
+            }
+            this.loadingIntervals.completed = true;
+          }
+          this.isAnalyzing = false;
+          this.setAnalyzeButtonLoadingState(false);
+          loadingOverlay.classList.add('hidden');
+          
+          // Show toast
+          if (this.uiManager) {
+            this.uiManager.showToast('Analysis canceled', 'info');
+          }
+        });
+      }
+      
+      // Messages to show during loading
+      const messages = [
+        'Starting analysis...',
+        'Fetching X profile data...',
+        'Analyzing recent posts...',
+        'Calculating engagement metrics...',
+        'Identifying posting patterns...',
+        'Generating insights...',
+        'Preparing recommendations...',
+        'Creating visualization data...',
+        'Finalizing results...'
+      ];
+      
+      // Time between message changes
+      const interval = 1500;
+      
+      // Current message index
+      let currentIndex = 0;
+      
+      if (!loadingText) {
+        console.warn('Loading text element not found');
+        resolve();
+        return;
+      }
+      
+      // Update loading text at intervals
+      const updateMessage = () => {
+        if (currentIndex < messages.length) {
+          console.log(`Updating loading message to: ${messages[currentIndex]}`);
+          
+          // Add fade-out class
+          loadingText.classList.add('fade-out');
+          
+          // After fade out completes, change text and fade in
+          setTimeout(() => {
+            loadingText.textContent = messages[currentIndex];
+            loadingText.classList.remove('fade-out');
+            currentIndex++;
+          }, 300);
+        }
+      };
+      
+      // Initial message
+      loadingText.textContent = messages[0];
+      currentIndex = 1;
+      
+      // Start updating messages
+      const messageInterval = setInterval(updateMessage, interval);
+      
+      // Add progress bar animation
+      if (progressBar) {
+        console.log('Setting up progress bar animation');
+        progressBar.style.width = '0%';
+        progressBar.classList.add('animate');
+        
+        // Animate progress from 0 to 90% (leaving room for completion)
+        let progress = 0;
+        const progressInterval = setInterval(() => {
+          progress += 1;
+          if (progress > 90) {
+            clearInterval(progressInterval);
+          } else {
+            progressBar.style.width = `${progress}%`;
+          }
+        }, 150);
+        
+        // Store progress interval
+        this.loadingIntervals = {
+          message: messageInterval,
+          progress: progressInterval,
+          completed: false
+        };
+      } else {
+        this.loadingIntervals = {
+          message: messageInterval,
+          completed: false
+        };
+      }
+      
+      // After first message change, resolve the promise
+      setTimeout(() => {
+        resolve();
+      }, interval);
+    });
   }
   
   /**
-   * Extract username from input (handle or URL)
+   * Update the loading status during analysis
+   * @param {number} progress - Progress value from 0-100
+   * @param {string} message - Status message to display
+   */
+  updateLoadingStatus(progress, message) {
+    if (!this.domElements.loadingOverlay) return;
+    
+    const progressBar = this.domElements.loadingOverlay.querySelector('.progress-bar');
+    const loadingText = this.domElements.loadingOverlay.querySelector('.loading-text');
+    
+    // Update progress bar if it exists
+    if (progressBar && typeof progress === 'number') {
+      // Clamp progress between 0-100
+      const clampedProgress = Math.min(100, Math.max(0, progress));
+      progressBar.style.width = `${clampedProgress}%`;
+      
+      // Mark as complete when progress reaches 100
+      if (clampedProgress >= 100 && this.loadingIntervals) {
+        this.loadingIntervals.completed = true;
+      }
+    }
+    
+    // Update message if provided
+    if (loadingText && message) {
+      loadingText.classList.add('fade-out');
+      setTimeout(() => {
+        loadingText.textContent = message;
+        loadingText.classList.remove('fade-out');
+      }, 300);
+    }
+  }
+  
+  /**
+   * Extract username from various input formats (handle, URL, etc.)
+   * @param {string} input - User input string
+   * @returns {string|null} Extracted username or null if invalid
    */
   extractUsername(input) {
+    if (!input) return null;
+    
     input = input.trim();
     
-    // Handle @username format
+    // Handle direct username with @
     if (input.startsWith('@')) {
       return input.substring(1);
     }
     
-    // Handle URL format
-    const urlRegex = /^https?:\/\/(www\.)?(twitter|x)\.com\/([^\/]+)\/?$/;
+    // Handle full URL format
+    const urlRegex = /twitter\.com\/([a-zA-Z0-9_]+)|x\.com\/([a-zA-Z0-9_]+)/;
     const match = input.match(urlRegex);
     
-    if (match && match[3]) {
-      return match[3];
+    if (match) {
+      return match[1] || match[2]; // Return the captured username
     }
     
-    // If input looks like a plain username without @ prefix
-    if (/^[a-zA-Z0-9_]{1,15}$/.test(input)) {
+    // Handle plain username
+    const usernameRegex = /^[a-zA-Z0-9_]{1,15}$/;
+    if (usernameRegex.test(input)) {
       return input;
     }
     
@@ -622,19 +892,35 @@ class PopupController {
   
   /**
    * Request profile analysis from background script
+   * @param {string} username - Username to analyze
+   * @returns {Promise<Object>} Analysis result
    */
   async requestProfileAnalysis(username) {
+    console.log('requestProfileAnalysis called for:', username);
+    
     return new Promise((resolve, reject) => {
+      console.log('Sending message to background script with action: analyzeProfile');
+      
       chrome.runtime.sendMessage(
         { action: 'analyzeProfile', username },
         (response) => {
+          console.log('Background script response received:', response);
+          
           if (chrome.runtime.lastError) {
-            reject(new Error(chrome.runtime.lastError.message));
+            const error = chrome.runtime.lastError;
+            console.error('Chrome runtime error:', error);
+            reject(new Error(error.message || 'Failed to communicate with background script'));
+          } else if (!response) {
+            console.error('No response received from background script');
+            reject(new Error('No response received from background script'));
           } else {
+            console.log('Analysis response processed successfully');
             resolve(response);
           }
         }
       );
+      
+      console.log('Message sent to background script, waiting for callback');
     });
   }
   
@@ -1236,25 +1522,32 @@ class PopupController {
             <span>Best time: <strong>${newPost.bestTime}</strong></span>
           `;
         }
-        
-        // Add highlight effect
+        // Add highlight effect to visually indicate the post has been updated
+        // This adds a CSS class that likely creates a brief animation or color change
         preview.classList.add('highlight-effect');
+        // Remove the highlight effect after 1 second to return to normal appearance
         setTimeout(() => preview.classList.remove('highlight-effect'), 1000);
         
+        // Display a success notification to the user using the UI manager
+        // This creates a toast message that appears briefly and then fades away
         this.uiManager.showToast('Post regenerated successfully', 'success');
       } catch (error) {
+        // Log any errors to the console for debugging purposes
         console.error('Error regenerating post:', error);
+        // Show an error toast notification to inform the user something went wrong
         this.uiManager.showToast('Failed to regenerate post', 'error');
         
-        // Restore original content in case of error
+        // Provide user feedback in the UI by replacing content with an error message
+        // This ensures users aren't left with a blank or loading state
         if (preview) {
           preview.innerHTML = '<p>Error regenerating post. Please try again.</p>';
         }
       } finally {
-        // Remove regenerating state
+        // Clean up by removing the regenerating class regardless of success or failure
+        // This ensures the UI returns to its normal state and can be interacted with again
         postElement.classList.remove('regenerating');
       }
-    }, 1000);
+    }, 1000); // The 1 second delay simulates an API call for demonstration purposes
   }
   
   /**
@@ -1435,134 +1728,171 @@ class PopupController {
     // Show the feedback modal
     feedbackModal.classList.add('show');
   }
+
+  /**
+   * Set the loading state for the analyze button directly (fallback method)
+   * @param {boolean} isLoading - Whether to show loading state
+   */
+  setAnalyzeButtonLoadingState(isLoading) {
+    try {
+      const button = this.domElements.analyzeButton || document.getElementById('analyze-button');
+      
+      if (!button) {
+        console.error('Analyze button not found, cannot set loading state');
+        return;
+      }
+      
+      console.log(`Setting analyze button loading state to: ${isLoading}`);
+      
+      if (isLoading) {
+        // Save original text
+        button.dataset.originalText = button.textContent || 'Analyze';
+        
+        // Create and add spinner
+        button.innerHTML = `
+          <span class="loading-spinner"></span>
+          <span>Analyzing...</span>
+        `;
+        button.classList.add('loading');
+        button.disabled = true;
+      } else {
+        // Restore original text
+        button.textContent = button.dataset.originalText || 'Analyze';
+        button.classList.remove('loading');
+        button.disabled = false;
+      }
+    } catch (error) {
+      console.error('Error setting analyze button loading state:', error);
+    }
+  }
 }
 
-/**
- * Utility class for formatting profile data for display
- */
-class ProfileFormatter {
-  /**
-   * Format profile results for display
-   */
-  static formatProfileResults(userData, analytics, strategy) {
-    return `
-      <div class="results-header">
-        <h2>Profile Analysis Results</h2>
-        <div class="timestamp">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-            <path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-          </svg>
-          <span>Analyzed ${new Date().toLocaleString()}</span>
+// Check if ProfileFormatter already exists before declaring it
+if (typeof window.ProfileFormatter === 'undefined') {
+  window.ProfileFormatter = class ProfileFormatter {
+    /**
+     * Format profile results for display
+     */
+    static formatProfileResults(userData, analytics, strategy) {
+      return `
+        <div class="results-header">
+          <h2>Profile Analysis Results</h2>
+          <div class="timestamp">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+              <path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+            </svg>
+            <span>Analyzed ${new Date().toLocaleString()}</span>
+          </div>
         </div>
-      </div>
-      
-      <div class="profile-summary">
-          <p><strong>Username:</strong> @${userData.username}</p>
-          <p><strong>Description:</strong> ${userData.description || 'No description'}</p>
-        <p><strong>Followers:</strong> ${userData.public_metrics?.followers_count?.toLocaleString() || 0}</p>
-        <p><strong>Following:</strong> ${userData.public_metrics?.following_count?.toLocaleString() || 0}</p>
-        <p><strong>Total Tweets:</strong> ${userData.public_metrics?.tweet_count?.toLocaleString() || 0}</p>
-      </div>
-      
-      <div class="metrics-grid">
-        <div class="metric-card">
-          <span class="metric-icon">📈</span>
-          <span class="metric-value">${analytics.engagement_rate}%</span>
-          <span class="metric-label">Engagement Rate</span>
+        
+        <div class="profile-summary">
+            <p><strong>Username:</strong> @${userData.username}</p>
+            <p><strong>Description:</strong> ${userData.description || 'No description'}</p>
+          <p><strong>Followers:</strong> ${userData.public_metrics?.followers_count?.toLocaleString() || 0}</p>
+          <p><strong>Following:</strong> ${userData.public_metrics?.following_count?.toLocaleString() || 0}</p>
+          <p><strong>Total Tweets:</strong> ${userData.public_metrics?.tweet_count?.toLocaleString() || 0}</p>
         </div>
-        <div class="metric-card">
-          <span class="metric-icon">⏰</span>
-          <span class="metric-value">${analytics.best_posting_times.length > 0 ? 
-            analytics.best_posting_times[0].hour + ':00' : 'N/A'}</span>
-          <span class="metric-label">Best Posting Time</span>
+        
+        <div class="metrics-grid">
+          <div class="metric-card">
+            <span class="metric-icon">📈</span>
+            <span class="metric-value">${analytics.engagement_rate}%</span>
+            <span class="metric-label">Engagement Rate</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-icon">⏰</span>
+            <span class="metric-value">${analytics.best_posting_times.length > 0 ? 
+              analytics.best_posting_times[0].hour + ':00' : 'N/A'}</span>
+            <span class="metric-label">Best Posting Time</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-icon">📊</span>
+            <span class="metric-value">${
+              strategy.contentTypes.media > Math.max(strategy.contentTypes.text, strategy.contentTypes.links) ? 'Media' :
+              strategy.contentTypes.text > strategy.contentTypes.links ? 'Text' : 'Links'
+            }</span>
+            <span class="metric-label">Top Content Type</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-icon">🔍</span>
+            <span class="metric-value">${userData.public_metrics?.tweet_count > 0 ? 
+              (userData.public_metrics.followers_count / userData.public_metrics.tweet_count).toFixed(2) : 'N/A'}</span>
+            <span class="metric-label">Followers per Tweet</span>
+          </div>
         </div>
-        <div class="metric-card">
-          <span class="metric-icon">📊</span>
-          <span class="metric-value">${
-            strategy.contentTypes.media > Math.max(strategy.contentTypes.text, strategy.contentTypes.links) ? 'Media' :
-            strategy.contentTypes.text > strategy.contentTypes.links ? 'Text' : 'Links'
-          }</span>
-          <span class="metric-label">Top Content Type</span>
-        </div>
-        <div class="metric-card">
-          <span class="metric-icon">🔍</span>
-          <span class="metric-value">${userData.public_metrics?.tweet_count > 0 ? 
-            (userData.public_metrics.followers_count / userData.public_metrics.tweet_count).toFixed(2) : 'N/A'}</span>
-          <span class="metric-label">Followers per Tweet</span>
-        </div>
-      </div>
-          
-          <h3>Best Posting Times</h3>
-      <ul class="posting-times-list">
-            ${analytics.best_posting_times.map(time =>
-          `<li>${time.hour}:00 - Average engagement: ${time.average_engagement}</li>`
-        ).join('')}
-          </ul>
-          
-          <h3>Top Performing Content</h3>
-          ${analytics.top_performing_content.map((post, index) => `
-            <div class="top-post">
-              <p><strong>#${index + 1}</strong> - Engagement: ${post.engagement}</p>
-              <p>${post.text}</p>
-              <small>Posted: ${new Date(post.created_at).toLocaleDateString()}</small>
-            </div>
-          `).join('')}
-          
-      <h3>Strategy Recommendations</h3>
-          <div class="strategy-section">
-            <h4>Content Mix Analysis:</h4>
-            <ul>
-          <li>Text-only posts: ${strategy.contentTypes.text}</li>
-          <li>Media posts: ${strategy.contentTypes.media}</li>
-          <li>Posts with links: ${strategy.contentTypes.links}</li>
+            
+            <h3>Best Posting Times</h3>
+        <ul class="posting-times-list">
+              ${analytics.best_posting_times.map(time =>
+            `<li>${time.hour}:00 - Average engagement: ${time.average_engagement}</li>`
+          ).join('')}
             </ul>
             
-            <h4>Recommendations:</h4>
-            <ul>
-          ${strategy.recommendations.map(rec => `<li>${rec}</li>`).join('')}
-            </ul>
-          </div>
+            <h3>Top Performing Content</h3>
+            ${analytics.top_performing_content.map((post, index) => `
+              <div class="top-post">
+                <p><strong>#${index + 1}</strong> - Engagement: ${post.engagement}</p>
+                <p>${post.text}</p>
+                <small>Posted: ${new Date(post.created_at).toLocaleDateString()}</small>
+              </div>
+            `).join('')}
+            
+        <h3>Strategy Recommendations</h3>
+            <div class="strategy-section">
+              <h4>Content Mix Analysis:</h4>
+              <ul>
+            <li>Text-only posts: ${strategy.contentTypes.text}</li>
+            <li>Media posts: ${strategy.contentTypes.media}</li>
+            <li>Posts with links: ${strategy.contentTypes.links}</li>
+              </ul>
+              
+              <h4>Recommendations:</h4>
+              <ul>
+            ${strategy.recommendations.map(rec => `<li>${rec}</li>`).join('')}
+              </ul>
+            </div>
 
-      <div class="action-row">
-        <button class="action-button share-results">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-            <path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92s-1.31-2.92-2.92-2.92z"></path>
-          </svg>
-          Share Results
-        </button>
-        <button class="action-button download-report">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-            <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"></path>
-          </svg>
-          Download Report
-        </button>
-          </div>
-        `;
-  }
-  
-  /**
-   * Format Grok AI analysis for display
-   */
-  static formatGrokAnalysis(grokAnalysis, tokenUsage) {
-    if (!grokAnalysis) return '';
+        <div class="action-row">
+          <button class="action-button share-results">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+              <path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92s-1.31-2.92-2.92-2.92z"></path>
+            </svg>
+            Share Results
+          </button>
+          <button class="action-button download-report">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+              <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"></path>
+            </svg>
+            Download Report
+          </button>
+            </div>
+          `;
+    }
     
-    const formatAnalysisText = (text) => {
-      if (!text) return '<p>No analysis available</p>';
+    /**
+     * Format Grok AI analysis for display
+     */
+    static formatGrokAnalysis(grokAnalysis, tokenUsage) {
+      if (!grokAnalysis) return '';
       
-      // Split text into paragraphs, clean up whitespace, and remove empty lines
-      return text.split('\n')
-        .map(para => para.trim())
-        .filter(para => para.length > 0)
-        .join('\n');
-    };
+      const formatAnalysisText = (text) => {
+        if (!text) return '<p>No analysis available</p>';
+        
+        // Split text into paragraphs, clean up whitespace, and remove empty lines
+        return text.split('\n')
+          .map(para => para.trim())
+          .filter(para => para.length > 0)
+          .join('\n');
+      };
 
-    return `
-      <div class="grok-analysis">
-        <h3>Grok AI Analysis</h3>
-        <p>${formatAnalysisText(grokAnalysis)}</p>
-      </div>
-    `;
-  }
+      return `
+        <div class="grok-analysis">
+          <h3>Grok AI Analysis</h3>
+          <p>${formatAnalysisText(grokAnalysis)}</p>
+        </div>
+      `;
+    }
+  };
 }
 
 // Initialize simple interaction manager if needed
@@ -1659,37 +1989,81 @@ class InteractionManager {
   }
 }
 
+// Add this at the beginning of your popup.js file to ensure it's initialized properly as a module
 document.addEventListener('DOMContentLoaded', function() {
-  console.log('X Profile Analyzer: Initializing popup...');
-  
-  // First, ensure any loading overlay is hidden
-  const loadingOverlay = document.querySelector('.loading-overlay');
-  if (loadingOverlay) {
-    loadingOverlay.style.display = 'none';
-    loadingOverlay.classList.add('hidden');
+  console.log('popup.js: DOMContentLoaded fired');
+  try {
+    // Create and initialize the controller
+    window.popupController = new PopupController();
+    window.popupController.initialize().catch(error => {
+      console.error('Failed to initialize popup controller:', error);
+    });
+  } catch (error) {
+    console.error('Error creating popup controller:', error);
+    // Add fallback basic initialization for analyze button
+    const analyzeButton = document.getElementById('analyze-button');
+    const profileInput = document.getElementById('profile-input');
+    
+    if (analyzeButton && profileInput) {
+      console.log('Setting up fallback event listeners');
+      
+      // Enable button when input has content
+      profileInput.addEventListener('input', function() {
+        analyzeButton.disabled = !this.value.trim();
+      });
+      
+      // Basic analyze button handling
+      analyzeButton.addEventListener('click', function() {
+        console.log('Analyze button clicked (fallback handler)');
+        const username = profileInput.value.trim();
+        
+        if (username) {
+          const loadingOverlay = document.querySelector('.loading-overlay');
+          if (loadingOverlay) loadingOverlay.classList.remove('hidden');
+          
+          // Add loading state to button
+          const originalText = analyzeButton.textContent;
+          analyzeButton.innerHTML = '<span class="loading-spinner"></span><span>Analyzing...</span>';
+          analyzeButton.disabled = true;
+          
+          console.log('Would analyze username:', username);
+          
+          // Use mock data for demonstration
+          setTimeout(() => {
+            if (loadingOverlay) loadingOverlay.classList.add('hidden');
+            analyzeButton.textContent = originalText;
+            analyzeButton.disabled = false;
+            
+            // Show mock results
+            const resultsContainer = document.getElementById('results-container');
+            if (resultsContainer) {
+              resultsContainer.style.display = 'block';
+              resultsContainer.innerHTML = `
+                <div class="results-card">
+                  <h3>Analysis for @${username}</h3>
+                  <p>This is a mock result since API connections are not working.</p>
+                  <div class="metrics-grid">
+                    <div class="metric-card fade-in">
+                      <div class="metric-value">1.5K</div>
+                      <div class="metric-label">Followers</div>
+                    </div>
+                    <div class="metric-card fade-in">
+                      <div class="metric-value">245</div>
+                      <div class="metric-label">Following</div>
+                    </div>
+                    <div class="metric-card fade-in">
+                      <div class="metric-value">42</div>
+                      <div class="metric-label">Engagement</div>
+                    </div>
+                  </div>
+                </div>
+              `;
+            }
+          }, 2000);
+        }
+      });
+    }
   }
-  
-  // Check if in floating mode
-  const isFloatingMode = window.location.search.includes('floating=true');
-  if (isFloatingMode) {
-    console.log('Running in floating mode');
-    initializeFloatingMode();
-  }
-  
-  // Initialize tab functionality
-  initializeTabs();
-  
-  // Initialize UI elements - this is critical for button functionality
-  initializeUI();
-  
-  // Initialize interaction manager for old code compatibility
-  window.interactionManager = new InteractionManager();
-  
-  // Setup direct button handlers as fallback
-  setupDirectButtonHandlers();
-  
-  // Debug elements
-  debugCheckElements();
 });
 
 function debugCheckElements() {

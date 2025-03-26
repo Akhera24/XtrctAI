@@ -1,15 +1,17 @@
 {
     "name": "x-analyzer",
-    "version": "1.0.0",
-    "description": "Analyze X profiles using AI",
+    "version": "1.0.1",
+    "description": "X Profile Analyzer Chrome Extension",
     "private": true,
     "scripts": {
         "build": "webpack --config webpack.config.js",
         "dev": "webpack --config webpack.config.js --watch",
-        "test": "echo \"No tests configured\""
+        "test": "echo \"No tests configured\"",
+        "generate-icons": "node generate-icons.js"
     },
     "dependencies": {
-        "dotenv": "^16.3.1"
+        "dotenv": "^16.3.1",
+        "sharp": "^0.33.2"
     },
     "devDependencies": {
         "@babel/core": "^7.26.10",

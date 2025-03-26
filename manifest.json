@@ -26,10 +26,12 @@
     ],
     "host_permissions": [
       "https://*.twitter.com/*",
-      "https://*.x.com/*"
+      "https://*.x.com/*",
+      "https://api.twitter.com/*",
+      "https://api.x.com/*"
     ],
     "background": {
-      "service_worker": "background.js",
+      "service_worker": "scripts/background.js",
       "type": "module"
     },
     "content_scripts": [
@@ -59,7 +61,7 @@
       }
     ],
     "content_security_policy": {
-      "extension_pages": "script-src 'self'; object-src 'self'"
+      "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://*.twitter.com https://api.twitter.com https://*.x.com https://api.x.com"
     },
     "offline_enabled": true,
     "minimum_chrome_version": "88"
