@@ -8,7 +8,7 @@
   --x-hover-bg: rgba(29, 161, 242, 0.1);
   --x-error: #E0245E;
   --x-success: #17BF63;
-  
+
   /* Enhanced Animation Timings */
   --transition-speed: 0.2s;
   --animation-duration: 2s;
@@ -63,14 +63,31 @@
 
 /* Enhanced Animations */
 @keyframes shake {
-  0%, 100% { transform: translateX(0); }
-  25% { transform: translateX(-5px); }
-  75% { transform: translateX(5px); }
+
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+
+  25% {
+    transform: translateX(-5px);
+  }
+
+  75% {
+    transform: translateX(5px);
+  }
 }
 
 @keyframes bounce {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.2); }
+
+  0%,
+  100% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.2);
+  }
 }
 
 /* Tooltip Styles */
@@ -105,14 +122,27 @@
 
 /* Keyframe Animations */
 @keyframes iconPulse {
-  0% { transform: scale(1); }
-  50% { transform: scale(1.05); }
-  100% { transform: scale(1); }
+  0% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.05);
+  }
+
+  100% {
+    transform: scale(1);
+  }
 }
 
 @keyframes iconRotate {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* X Logo specific styling */
@@ -151,7 +181,57 @@
 }
 
 @keyframes pulse {
-  0% { transform: scale(1); }
-  50% { transform: scale(1.05); }
-  100% { transform: scale(1); }
-} 
+  0% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.05);
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* SVG icon styles for footer */
+.footer-button svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* Specific styling for footer button icons */
+.help-button svg,
+.feedback-button svg,
+.share-button svg {
+  fill: currentColor;
+}
+
+/* Path styling for SVG icons */
+.footer-button svg path {
+  fill: currentColor;
+}
+
+/* Media button icon styles */
+.media-icon {
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
+}
+
+.gif-icon,
+.poll-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.media-btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* Character counter styles */
+.character-counter {
+  font-size: 14px;
+  color: var(--x-dark-gray);
+}

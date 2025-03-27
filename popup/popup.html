@@ -1,28 +1,32 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>X Profile Analyzer</title>
-  
+
   <!-- CSS loading order - base styles first, then specifics -->
   <link rel="stylesheet" href="../styles/popup.css">
   <link rel="stylesheet" href="../styles/animations.css">
   <link rel="stylesheet" href="../styles/icon-styles.css">
-  
+
   <!-- Critical overrides for UI fixes -->
   <style>
     /* Critical overrides for UI fixes */
-    .primary-button, 
+    .primary-button,
     .secondary-button,
     .action-button {
-      position: relative; /* For ripple effect */
-      overflow: hidden; /* For ripple containment */
+      position: relative;
+      /* For ripple effect */
+      overflow: hidden;
+      /* For ripple containment */
       cursor: pointer;
-      z-index: 1; /* Ensure clickable */
+      z-index: 1;
+      /* Ensure clickable */
     }
 
-    .primary-button:disabled, 
+    .primary-button:disabled,
     .secondary-button:disabled,
     .action-button:disabled {
       opacity: 0.6;
@@ -85,15 +89,15 @@
       align-items: center;
       transition: opacity 0.3s ease;
     }
-    
+
     .loading-overlay.hidden {
       display: none !important;
     }
-    
+
     .loading-overlay.visible {
       opacity: 1;
     }
-    
+
     .loading-content {
       text-align: center;
       padding: 20px;
@@ -106,18 +110,18 @@
       align-items: center;
       max-width: 80%;
     }
-    
+
     .loading-text {
       margin: 16px 0;
       font-weight: 500;
       transition: opacity 0.2s ease;
     }
-    
+
     .progress-container {
       width: 100%;
       margin-top: 10px;
     }
-    
+
     .progress-track {
       width: 100%;
       height: 4px;
@@ -125,7 +129,7 @@
       border-radius: 2px;
       overflow: hidden;
     }
-    
+
     .progress-fill {
       height: 100%;
       background-color: white;
@@ -137,7 +141,7 @@
     [data-theme="dark"] .loading-overlay {
       background-color: rgba(0, 0, 0, 0.85);
     }
-    
+
     /* Error display */
     .error-box {
       background-color: rgba(244, 33, 46, 0.1);
@@ -149,22 +153,30 @@
       align-items: flex-start;
       gap: 12px;
     }
-    
+
     .error-message {
       flex: 1;
     }
-    
+
     /* Pulse animation for buttons */
     .pulse-animation {
       animation: pulse 1.5s infinite;
     }
-    
+
     @keyframes pulse {
-      0% { opacity: 1; }
-      50% { opacity: 0.6; }
-      100% { opacity: 1; }
+      0% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: 0.6;
+      }
+
+      100% {
+        opacity: 1;
+      }
     }
-    
+
     /* Cancel button in loading overlay */
     .cancel-analysis-button {
       background-color: rgba(255, 255, 255, 0.2);
@@ -177,21 +189,21 @@
       font-size: 14px;
       transition: background-color 0.2s;
     }
-    
+
     .cancel-analysis-button:hover {
       background-color: rgba(255, 255, 255, 0.3);
     }
-    
+
     [data-theme="dark"] .cancel-analysis-button {
       border-color: #fff;
       color: #fff;
     }
-    
+
     [data-theme="light"] .cancel-analysis-button {
       border-color: #1d9bf0;
       color: #1d9bf0;
     }
-    
+
     /* Character counter */
     .character-counter {
       text-align: right;
@@ -200,13 +212,14 @@
       margin-top: 4px;
       transition: color 0.2s ease;
     }
-    
+
     .character-counter.warning {
       color: #f4212e;
       font-weight: bold;
     }
   </style>
 </head>
+
 <body>
   <div class="popup-container">
     <!-- Header with logo, theme toggle and user profile -->
@@ -215,10 +228,11 @@
         <img src="../icons/icon48.png" alt="X Profile Analyzer" class="logo">
         <span class="logo-text">X Profile Analyzer</span>
       </div>
-      
+
       <button class="sign-in-button">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
-          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/>
+          <path
+            d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z" />
         </svg>
         <span>Sign in</span>
       </button>
@@ -228,20 +242,22 @@
     <div class="tab-navigation">
       <div class="tab-button active" id="analyze-tab">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-          <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z"/>
-          <path d="M7 12h2v5H7zm4-7h2v12h-2zm4 4h2v8h-2z"/>
+          <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z" />
+          <path d="M7 12h2v5H7zm4-7h2v12h-2zm4 4h2v8h-2z" />
         </svg>
         Analyze
       </div>
       <div class="tab-button" id="compose-tab">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-          <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
+          <path
+            d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" />
         </svg>
         Compose
       </div>
       <div class="tab-button" id="history-tab">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-          <path d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/>
+          <path
+            d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z" />
         </svg>
         History
       </div>
@@ -255,46 +271,49 @@
           <span class="input-prefix">@</span>
           <input type="text" id="profile-input" class="profile-input" placeholder="username" autocomplete="off">
         </div>
-        
+
         <div class="input-wrapper">
           <input type="text" class="post-input" placeholder="Post URL (optional)">
         </div>
-        
+
         <div class="action-buttons">
           <button id="analyze-button" class="primary-button">Analyze</button>
           <button id="test-api-button" class="secondary-button" title="Test API connectivity">Test API</button>
         </div>
       </div>
-      
+
       <div class="results-container" id="results-container">
         <!-- Results will be dynamically populated by JavaScript -->
       </div>
     </div>
-    
+
     <!-- Compose Tab Content -->
     <div class="tab-content" id="compose-tab">
       <div class="post-composer">
         <div class="compose-header">
           <h3>Compose Post</h3>
         </div>
-        
+
         <div class="compose-body">
           <textarea class="post-input" placeholder="What's happening?" maxlength="280"></textarea>
           <div class="compose-tools">
             <div class="media-buttons">
               <button class="media-btn" title="Add Image">
-                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-                  <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14zm-5-7l-3 3.72L9 13l-3 4h12l-4-5z"/>
+                <svg viewBox="0 0 24 24" class="media-icon">
+                  <path
+                    d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14zm-5-7l-3 3.72L9 13l-3 4h12l-4-5z" />
                 </svg>
               </button>
               <button class="media-btn" title="Add GIF">
-                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-                  <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-8.5 5.5h3v2h-3V11h2c.55 0 1 .45 1 1v2c0 .55-.45 1-1 1h-3c-.55 0-1-.45-1-1v-5c0-.55.45-1 1-1zm-5 0h3v2h-3V11h2c.55 0 1 .45 1 1v2c0 .55-.45 1-1 1h-3c-.55 0-1-.45-1-1v-5c0-.55.45-1 1-1z"/>
+                <svg viewBox="0 0 24 24" class="media-icon gif-icon">
+                  <path
+                    d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-8.5 5.5h3v2h-3V11h2c.55 0 1 .45 1 1v2c0 .55-.45 1-1 1h-3c-.55 0-1-.45-1-1v-5c0-.55.45-1 1-1zm-5 0h3v2h-3V11h2c.55 0 1 .45 1 1v2c0 .55-.45 1-1 1h-3c-.55 0-1-.45-1-1v-5c0-.55.45-1 1-1z" />
                 </svg>
               </button>
               <button class="media-btn" title="Add Poll">
-                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-                  <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM5 19V5h14v14H5zm5-7h5v2h-5v-2zm0-4h8v2h-8V8zm-3 8h2v-6H7v6z"/>
+                <svg viewBox="0 0 24 24" class="media-icon poll-icon">
+                  <path
+                    d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM5 19V5h14v14H5zm5-7h5v2h-5v-2zm0-4h8v2h-8V8zm-3 8h2v-6H7v6z" />
                 </svg>
               </button>
             </div>
@@ -302,19 +321,20 @@
           </div>
           <button class="primary-button post-now-button">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="white" style="margin-right: 6px;">
-              <path d="M23 3c-.9.65-1.9 1.16-3 1.5.79-.81 1.38-1.82 1.67-2.94-1.18.7-2.5 1.2-3.89 1.47C16.6 1.81 15.04 1 13.31 1c-3.33 0-6.03 2.7-6.03 6.03 0 .47.05.93.15 1.38C3.06 8.12 0 5.76 0 2.75c0 2.09 1.07 3.94 2.68 5.02-.98-.03-1.9-.3-2.7-.75v.08c0 2.92 2.08 5.36 4.83 5.92-.5.14-1.04.21-1.59.21-.39 0-.77-.04-1.14-.11.77 2.4 3 4.14 5.64 4.19-2.07 1.62-4.67 2.58-7.5 2.58-.49 0-.97-.03-1.44-.09 2.68 1.72 5.86 2.72 9.28 2.72 11.14 0 17.23-9.23 17.23-17.24 0-.26 0-.52-.02-.78 1.18-.85 2.21-1.92 3.01-3.13H23z"/>
+              <path
+                d="M23 3c-.9.65-1.9 1.16-3 1.5.79-.81 1.38-1.82 1.67-2.94-1.18.7-2.5 1.2-3.89 1.47C16.6 1.81 15.04 1 13.31 1c-3.33 0-6.03 2.7-6.03 6.03 0 .47.05.93.15 1.38C3.06 8.12 0 5.76 0 2.75c0 2.09 1.07 3.94 2.68 5.02-.98-.03-1.9-.3-2.7-.75v.08c0 2.92 2.08 5.36 4.83 5.92-.5.14-1.04.21-1.59.21-.39 0-.77-.04-1.14-.11.77 2.4 3 4.14 5.64 4.19-2.07 1.62-4.67 2.58-7.5 2.58-.49 0-.97-.03-1.44-.09 2.68 1.72 5.86 2.72 9.28 2.72 11.14 0 17.23-9.23 17.23-17.24 0-.26 0-.52-.02-.78 1.18-.85 2.21-1.92 3.01-3.13H23z" />
             </svg>
             Post
           </button>
         </div>
       </div>
-      
+
       <div class="ai-generator">
         <div class="form-group">
           <label for="post-topic">Topic</label>
           <input type="text" id="post-topic" class="input" placeholder="Enter topic for your post">
         </div>
-        
+
         <div class="form-group">
           <label>Post Type</label>
           <div class="type-selector">
@@ -324,7 +344,7 @@
             <button class="type-btn" data-type="question">Question</button>
           </div>
         </div>
-        
+
         <div class="form-group">
           <label>Tone</label>
           <div class="tone-selector">
@@ -334,7 +354,7 @@
             <button class="tone-btn" data-tone="inspirational">Inspirational</button>
           </div>
         </div>
-        
+
         <div class="form-group">
           <label>Options</label>
           <div class="options-group">
@@ -352,12 +372,12 @@
             </div>
           </div>
         </div>
-        
+
         <div class="post-generator-controls">
           <button id="generate-button" class="primary-button">Generate Post</button>
         </div>
       </div>
-      
+
       <div class="generated-posts" id="generated-posts-container">
         <!-- Generated posts will appear here -->
       </div>
@@ -374,14 +394,16 @@
           <button id="clear-history-button" class="secondary-button">Clear All</button>
         </div>
       </div>
-      
+
       <div class="history-list">
         <div class="history-container" id="historyItemsContainer">
           <!-- History items will be loaded here -->
         </div>
         <div class="empty-state">
           <svg class="empty-icon" viewBox="0 0 24 24">
-            <path d="M19.5 7h-15C3.12 7 2 8.12 2 9.5v10C2 20.88 3.12 22 4.5 22h15c1.38 0 2.5-1.12 2.5-2.5v-10C22 8.12 20.88 7 19.5 7zM4.5 9h15c.28 0 .5.22.5.5v1.5H4v-1.5c0-.28.22-.5.5-.5zm15 11h-15c-.28 0-.5-.22-.5-.5v-6.5h16v6.5c0 .28-.22.5-.5.5z" fill="currentColor"></path>
+            <path
+              d="M19.5 7h-15C3.12 7 2 8.12 2 9.5v10C2 20.88 3.12 22 4.5 22h15c1.38 0 2.5-1.12 2.5-2.5v-10C22 8.12 20.88 7 19.5 7zM4.5 9h15c.28 0 .5.22.5.5v1.5H4v-1.5c0-.28.22-.5.5-.5zm15 11h-15c-.28 0-.5-.22-.5-.5v-6.5h16v6.5c0 .28-.22.5-.5.5z"
+              fill="currentColor"></path>
             <path d="M7 5C7 3.9 7.9 3 9 3h6c1.1 0 2 .9 2 2v2H7V5z" fill="currentColor"></path>
           </svg>
           <h3>No History</h3>
@@ -389,7 +411,7 @@
         </div>
       </div>
     </div>
-    
+
     <!-- Loading Overlay -->
     <div class="loading-overlay hidden">
       <div class="loading-content">
@@ -407,34 +429,45 @@
     <div class="toast-container"></div>
 
     <!-- Footer -->
+    <!-- Footer with proper accessibility attributes -->
     <footer class="footer">
       <div class="status-indicator-container">
         <span class="status-dot active"></span>
         <span class="status-text">X Profile Analyzer v1.2.0</span>
       </div>
       <div class="footer-actions">
-        <button class="footer-button help-button" data-tooltip="Help">
+        <button class="footer-button help-button" data-tooltip="Help" title="Help">
           <svg viewBox="0 0 24 24" width="20" height="20">
-            <path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9-4.03-9-9-9zm0 1c4.41 0 8 3.59 8 8s-3.59 8-8 8-8-3.59-8-8 3.59-8 8-8zm-1 3h2v2h-2V7zm3 10h-4v-1h1v-4h-1v-1h3v5h1v1z" fill="currentColor"></path>
+            <path
+              d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9-4.03-9-9-9zm0 1c4.41 0 8 3.59 8 8s-3.59 8-8 8-8-3.59-8-8 3.59-8 8-8zm-1 3h2v2h-2V7zm3 10h-4v-1h1v-4h-1v-1h3v5h1v1z"
+              fill="currentColor"></path>
           </svg>
         </button>
-        <button class="footer-button feedback-button" data-tooltip="Feedback">
+        <button class="footer-button feedback-button" data-tooltip="Feedback" title="Feedback">
           <svg viewBox="0 0 24 24" width="20" height="20">
-            <path d="M12.29 8.71L9.7 11.3c-.39.39-.39 1.02 0 1.41l2.59 2.59c.63.63 1.71.18 1.71-.71V9.41c0-.89-1.08-1.33-1.71-.7z" fill="currentColor"></path>
-            <path d="M21 6h-4c0-2.21-1.79-4-4-4S9 3.79 9 6H5c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-9-2c1.1 0 2 .9 2 2h-4c0-1.1.9-2 2-2zm9 16H5V8h16v12z" fill="currentColor"></path>
+            <path
+              d="M12.29 8.71L9.7 11.3c-.39.39-.39 1.02 0 1.41l2.59 2.59c.63.63 1.71.18 1.71-.71V9.41c0-.89-1.08-1.33-1.71-.7z"
+              fill="currentColor"></path>
+            <path
+              d="M21 6h-4c0-2.21-1.79-4-4-4S9 3.79 9 6H5c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-9-2c1.1 0 2 .9 2 2h-4c0-1.1.9-2 2-2zm9 16H5V8h16v12z"
+              fill="currentColor"></path>
           </svg>
         </button>
-        <button class="footer-button share-button" data-tooltip="Share">
+        <button class="footer-button share-button" data-tooltip="Share" title="Share">
           <svg viewBox="0 0 24 24" width="20" height="20">
-            <path d="M12 2.59l5.7 5.7-1.41 1.42L13 6.41V16h-2V6.41l-3.3 3.3-1.41-1.42L12 2.59zM21 15l-.02 3.51c0 1.38-1.12 2.49-2.5 2.49H5.5C4.11 21 3 19.88 3 18.5V15h2v3.5c0 .28.22.5.5.5h12.98c.28 0 .5-.22.5-.5L19 15h2z" fill="currentColor"></path>
+            <path
+              d="M12 2.59l5.7 5.7-1.41 1.42L13 6.41V16h-2V6.41l-3.3 3.3-1.41-1.42L12 2.59zM21 15l-.02 3.51c0 1.38-1.12 2.49-2.5 2.49H5.5C4.11 21 3 19.88 3 18.5V15h2v3.5c0 .28.22.5.5.5h12.98c.28 0 .5-.22.5-.5L19 15h2z"
+              fill="currentColor"></path>
           </svg>
         </button>
       </div>
     </footer>
+
   </div>
 
   <!-- Scripts -->
   <script type="module" src="../scripts/directHandler.js"></script>
   <script type="module" src="../scripts/debugTools.js"></script>
 </body>
+
 </html>

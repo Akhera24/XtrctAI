@@ -5,7 +5,8 @@ body {
     background-color: #ffffff;
     margin: 0;
     padding: 0;
-    width: 350px; /* Width to match the second image */
+    width: 350px;
+    /* Width to match the second image */
     max-height: 600px;
     overflow-y: auto;
 }
@@ -16,7 +17,8 @@ body {
 }
 
 h1 {
-    font-size: 20px; /* Slightly larger */
+    font-size: 20px;
+    /* Slightly larger */
     font-weight: 800;
     margin: 0 0 16px 0;
     color: #0f1419;
@@ -30,19 +32,24 @@ h3 {
 }
 
 h4 {
-    font-size: 15px; /* Slightly larger */
-    font-weight: 700; /* Bolder */
+    font-size: 15px;
+    /* Slightly larger */
+    font-weight: 700;
+    /* Bolder */
     margin: 12px 0 6px 0;
     color: #0f1419;
 }
 
 button {
-    background-color: #000000; /* X's new black theme */
+    background-color: #000000;
+    /* X's new black theme */
     color: white;
     border: none;
-    padding: 10px 20px; /* Larger padding */
+    padding: 10px 20px;
+    /* Larger padding */
     border-radius: 9999px;
-    font-weight: 700; /* Bolder */
+    font-weight: 700;
+    /* Bolder */
     cursor: pointer;
     transition: background-color 0.2s;
     margin: 10px 0;
@@ -50,7 +57,8 @@ button {
 }
 
 button:hover {
-    background-color: #272727; /* Darker hover state */
+    background-color: #272727;
+    /* Darker hover state */
 }
 
 #status {
@@ -65,13 +73,15 @@ button:hover {
     margin-top: 12px;
     padding: 12px;
     border: 1px solid #eff3f4;
-    border-radius: 16px; /* Larger radius */
+    border-radius: 16px;
+    /* Larger radius */
     background-color: #ffffff;
 }
 
 p {
     margin: 8px 0;
-    font-size: 15px; /* Larger text */
+    font-size: 15px;
+    /* Larger text */
     line-height: 1.5;
 }
 
@@ -121,7 +131,8 @@ p {
 .insight-section h4 {
     margin: 0 0 8px 0;
     font-size: 15px;
-    color: #000000; /* X's black */
+    color: #000000;
+    /* X's black */
 }
 
 .insight-content {
@@ -155,7 +166,8 @@ p {
 }
 
 .usage-bar {
-    height: 6px; /* Thicker bar */
+    height: 6px;
+    /* Thicker bar */
     background-color: #eff3f4;
     border-radius: 3px;
     margin-top: 8px;
@@ -163,7 +175,8 @@ p {
 
 .usage-progress {
     height: 100%;
-    background-color: #000000; /* X's black */
+    background-color: #000000;
+    /* X's black */
     border-radius: 3px;
 }
 
@@ -177,7 +190,8 @@ p {
 .input-group {
     display: flex;
     margin: 12px 0;
-    gap: 2px; /* Small gap between input and button */
+    gap: 2px;
+    /* Small gap between input and button */
 }
 
 .input-group input {
@@ -230,7 +244,8 @@ ul li {
 }
 
 a {
-    color: #000000; /* X's black */
+    color: #000000;
+    /* X's black */
     text-decoration: none;
 }
 
@@ -257,14 +272,16 @@ small {
 }
 
 .x-logo {
-    width: 24px; /* Larger logo */
+    width: 24px;
+    /* Larger logo */
     height: 24px;
     margin-right: 12px;
 }
 
 /* Scrollbar styling for better X/Twitter feel */
 ::-webkit-scrollbar {
-    width: 6px; /* Thinner scrollbar */
+    width: 6px;
+    /* Thinner scrollbar */
 }
 
 ::-webkit-scrollbar-track {
@@ -282,60 +299,61 @@ small {
 
 /* Main Styles */
 :root {
-  --primary-color: #1d9bf0;
-  --primary-hover: #1a8cd8;
-  --secondary-color: #f7f9f9;
-  --text-color: #0f1419;
-  --text-secondary: #536471;
-  --border-color: #eff3f4;
-  --error-color: #f4212e;
-  --success-color: #00ba7c;
-  --warning-color: #ffa500;
-  --bg-color: #ffffff;
-  --hover-bg: #f7f9f9;
-  --dark-bg: #15202b;
-  --dark-secondary: #1e2732;
-  --dark-border: #38444d;
-  --dark-text: #f7f9f9;
-  --dark-text-secondary: #8899a6;
-  --toast-bg: rgba(0, 0, 0, 0.85);
-  --toast-text: white;
-  --shadow-color: rgba(101, 119, 134, 0.2);
-  --animation-duration: 0.3s;
+    --primary-color: #1d9bf0;
+    --primary-hover: #1a8cd8;
+    --secondary-color: #f7f9f9;
+    --text-color: #0f1419;
+    --text-secondary: #536471;
+    --border-color: #eff3f4;
+    --error-color: #f4212e;
+    --success-color: #00ba7c;
+    --warning-color: #ffa500;
+    --bg-color: #ffffff;
+    --hover-bg: #f7f9f9;
+    --dark-bg: #15202b;
+    --dark-secondary: #1e2732;
+    --dark-border: #38444d;
+    --dark-text: #f7f9f9;
+    --dark-text-secondary: #8899a6;
+    --toast-bg: rgba(0, 0, 0, 0.85);
+    --toast-text: white;
+    --shadow-color: rgba(101, 119, 134, 0.2);
+    --animation-duration: 0.3s;
 }
 
 [data-theme="dark"] {
-  --primary-color: #1d9bf0;
-  --primary-hover: #1a8cd8;
-  --secondary-color: #1e2732;
-  --text-color: #e7e9ea;
-  --text-secondary: #8899a6;
-  --border-color: #38444d;
-  --bg-color: #15202b;
-  --hover-bg: #1e2732;
-  --shadow-color: rgba(255, 255, 255, 0.1);
+    --primary-color: #1d9bf0;
+    --primary-hover: #1a8cd8;
+    --secondary-color: #1e2732;
+    --text-color: #e7e9ea;
+    --text-secondary: #8899a6;
+    --border-color: #38444d;
+    --bg-color: #15202b;
+    --hover-bg: #1e2732;
+    --shadow-color: rgba(255, 255, 255, 0.1);
 }
 
 * {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  color: var(--text-color);
-  background-color: var(--bg-color);
-  transition: background-color 0.3s ease, color 0.3s ease;
-  font-size: 14px;
-  line-height: 1.4;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--text-color);
+    background-color: var(--bg-color);
+    transition: background-color 0.3s ease, color 0.3s ease;
+    font-size: 14px;
+    line-height: 1.4;
 }
 
 .popup-container {
-  width: 100%;
-  height: 600px; /* Fixed height to match the second image */
-  display: flex;
-  flex-direction: column;
+    width: 100%;
+    height: 600px;
+    /* Fixed height to match the second image */
+    display: flex;
+    flex-direction: column;
 }
 
 /* Header styling */
@@ -480,7 +498,8 @@ body {
     font-size: 14px;
 }
 
-.profile-input, .post-input {
+.profile-input,
+.post-input {
     flex: 1;
     padding: 12px 8px;
     border: none;
@@ -714,13 +733,15 @@ body {
     border-color: #1d9bf0;
 }
 
-.type-selector, .tone-selector {
+.type-selector,
+.tone-selector {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
 }
 
-.type-btn, .tone-btn {
+.type-btn,
+.tone-btn {
     background-color: #ffffff;
     border: 1px solid #cfd9de;
     border-radius: 16px;
@@ -730,7 +751,8 @@ body {
     transition: all 0.2s;
 }
 
-.type-btn.active, .tone-btn.active {
+.type-btn.active,
+.tone-btn.active {
     background-color: #e8f5fd;
     border-color: #1d9bf0;
     color: #1d9bf0;
@@ -863,8 +885,13 @@ body {
 }
 
 @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
+    0% {
+        transform: rotate(0deg);
+    }
+
+    100% {
+        transform: rotate(360deg);
+    }
 }
 
 .loading-text {
@@ -950,6 +977,69 @@ body {
     color: #1d9bf0;
 }
 
+/* Footer styling */
+.footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 16px;
+    border-top: 1px solid var(--border-color);
+    background-color: var(--background-color);
+}
+
+.status-indicator-container {
+    display: flex;
+    align-items: center;
+}
+
+.status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 8px;
+    background-color: #ccc;
+}
+
+.status-dot.active {
+    background-color: #1d9bf0;
+}
+
+.status-text {
+    font-size: 12px;
+    color: var(--text-color-secondary);
+}
+
+.footer-actions {
+    display: flex;
+    gap: 12px;
+}
+
+.footer-button {
+    background: none;
+    border: none;
+    padding: 6px;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-color-secondary);
+    transition: background-color 0.2s, color 0.2s;
+}
+
+.footer-button:hover {
+    background-color: rgba(29, 155, 240, 0.1);
+    color: var(--accent-color);
+}
+
+/* Button styling consistency */
+.footer-button.help-button,
+.footer-button.feedback-button,
+.footer-button.share-button {
+    width: 32px;
+    height: 32px;
+}
+
 /* Tooltip */
 [data-tooltip]:hover:after {
     content: attr(data-tooltip);
@@ -985,8 +1075,15 @@ body {
 
 /* Animation for new items */
 @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 .fadeIn {
