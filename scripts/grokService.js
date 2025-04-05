@@ -37,6 +37,30 @@ export function configure(options) {
   }
   
   console.log('Grok service configured');
+  return { success: true, config: { ...config } };
+}
+
+/**
+ * Configure caching behavior for the service
+ * @param {Object} options - Caching options
+ * @param {boolean} options.enabled - Whether caching is enabled
+ * @param {number} options.maxAge - Maximum age of cached items in milliseconds
+ */
+export function configureCaching(options = {}) {
+  console.log('Configuring caching:', options);
+  
+  if (options.enabled !== undefined) {
+    config.cacheEnabled = options.enabled;
+  }
+  
+  if (options.maxAge !== undefined && options.maxAge > 0) {
+    config.maxAge = options.maxAge;
+  }
+  
+  return {
+    success: true,
+    config: { ...config }
+  };
 }
 
 /**
@@ -659,3 +683,13 @@ chrome.storage.local.get(['grokApiConfig'], (result) => {
     configure(result.grokApiConfig);
   }
 });
+
+/**
+ * Alias for analyzeProfile - used to maintain compatibility with background.js imports
+ */
+export const analyzeContent = analyzeProfile;
+
+/**
+ * Alias for analyzeProfile - used to maintain compatibility with background.js imports
+ */
+export const compareContent = analyzeProfile;

@@ -5,8 +5,7 @@ body {
     background-color: #ffffff;
     margin: 0;
     padding: 0;
-    width: 350px;
-    /* Width to match the second image */
+    width: 375px; /* Adjusted to match the second image */
     max-height: 600px;
     overflow-y: auto;
 }
@@ -350,10 +349,26 @@ body {
 
 .popup-container {
     width: 100%;
+    max-width: 400px;
     height: 600px;
     /* Fixed height to match the second image */
     display: flex;
     flex-direction: column;
+}
+
+/* Responsive adjustments */
+@media (max-width: 400px) {
+    .popup-container {
+        height: 100vh;
+    }
+    
+    .header-content {
+        padding: 8px 12px;
+    }
+    
+    .logo-text {
+        font-size: 14px;
+    }
 }
 
 /* Header styling */
@@ -361,8 +376,37 @@ body {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 12px 16px;
+    padding: 8px 16px;
     border-bottom: 1px solid #eff3f4;
+}
+
+.logo-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background-color: #fff;
+    padding: 4px 8px;
+    border-radius: 8px;
+    transition: all 0.2s ease;
+}
+
+[data-theme="dark"] .logo-wrapper {
+    background-color: #1e2732;
+}
+
+.logo-wrapper:hover {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.logo-text {
+    font-weight: 700;
+    font-size: 16px;
+}
+
+.x-logo {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
 }
 
 .home-button {
@@ -405,29 +449,37 @@ body {
     margin-right: 4px;
 }
 
-/* Tab navigation */
+/* Tab navigation - Updated to match the second image */
 .tab-navigation {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0;
     border-bottom: 1px solid #eff3f4;
+    margin-bottom: 16px;
+    position: relative;
+    justify-content: space-around; /* Even spacing between tabs */
 }
 
 .tab-button {
     flex: 1;
-    background: none;
-    border: none;
-    padding: 12px 8px;
+    text-align: center;
+    padding: 16px 0;
+    color: #536471;
+    font-weight: 500;
+    font-size: 15px;
+    cursor: pointer;
+    position: relative;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 6px;
-    color: #536471;
-    font-size: 13px;
-    font-weight: 500;
-    cursor: pointer;
-    position: relative;
+    background: transparent;
+    border: none;
+    margin: 0;
+    transition: color 0.2s ease;
+}
+
+.tab-button svg {
+    margin-bottom: 4px;
+    width: 20px;
+    height: 20px;
 }
 
 .tab-button:after {
@@ -435,10 +487,11 @@ body {
     position: absolute;
     bottom: 0;
     left: 0;
-    right: 0;
+    width: 100%;
     height: 4px;
     background-color: transparent;
-    transition: background-color 0.2s;
+    transition: background-color 0.2s ease;
+    border-radius: 4px 4px 0 0;
 }
 
 .tab-button.active {
@@ -450,42 +503,36 @@ body {
     background-color: #1d9bf0;
 }
 
-.tab-button svg {
-    fill: currentColor;
-}
-
-/* Tab content */
 .tab-content {
     display: none;
-    padding: 16px;
-    flex: 1;
-    overflow-y: auto;
+    padding: 0 16px;
 }
 
 .tab-content.active {
     display: block;
 }
 
-/* URL input section */
+/* URL input section - Updated to match the second image */
 .url-input-section {
     margin-bottom: 16px;
 }
 
 .url-input-section label {
     display: block;
-    color: #536471;
     font-size: 14px;
+    font-weight: 500;
     margin-bottom: 8px;
+    color: #0f1419;
 }
 
 .input-wrapper {
-    position: relative;
     display: flex;
     align-items: center;
     border: 1px solid #cfd9de;
-    border-radius: 4px;
-    background-color: #fff;
-    transition: border-color 0.2s;
+    border-radius: 9999px;
+    padding: 10px 16px;
+    background-color: #ffffff;
+    margin-bottom: 16px;
 }
 
 .input-wrapper:focus-within {
@@ -494,119 +541,142 @@ body {
 
 .input-prefix {
     color: #536471;
-    padding: 0 0 0 12px;
-    font-size: 14px;
+    margin-right: 4px;
+    font-weight: 400;
 }
 
 .profile-input,
-.post-input {
+.post-url-input {
     flex: 1;
-    padding: 12px 8px;
     border: none;
-    background: transparent;
-    font-size: 14px;
     outline: none;
+    font-size: 15px;
+    background: transparent;
 }
 
-.clear-input {
-    background: none;
-    border: none;
-    color: #536471;
-    font-size: 18px;
-    cursor: pointer;
-    padding: 0 12px;
-}
-
-/* Primary button */
+/* Primary button - Updated to match the second image */
 .primary-button {
-    width: 100%;
     background-color: #1d9bf0;
     color: white;
     border: none;
     border-radius: 9999px;
-    padding: 12px 16px;
+    padding: 12px 24px;
     font-size: 15px;
     font-weight: 700;
     cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
     transition: background-color 0.2s;
-    margin: 16px 0;
-    position: relative;
-    overflow: hidden;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+    margin: 8px 0;
 }
 
 .primary-button:hover {
     background-color: #1a8cd8;
 }
 
-.primary-button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
+/* Debug result styling */
+.debug-result {
+    margin-top: 16px;
+    padding: 16px;
+    background-color: #f8f9fa;
+    border-radius: 8px;
+    border: 1px solid #eff3f4;
 }
 
-/* Secondary button */
-.secondary-button {
-    background-color: #ffffff;
-    color: #0f1419;
-    border: 1px solid #cfd9de;
+.debug-result h3 {
+    margin-top: 0;
+    font-size: 16px;
+}
+
+.stat-block {
+    margin-top: 16px;
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+}
+
+.stat-item {
+    text-align: center;
+    flex: 1;
+}
+
+.stat-value {
+    font-size: 24px;
+    font-weight: 700;
+    color: #1d9bf0;
+    margin-bottom: 4px;
+}
+
+.stat-label {
+    font-size: 14px;
+    color: #536471;
+}
+
+/* Test API button - match the second image */
+.test-api-button {
+    background-color: transparent;
+    color: #1d9bf0;
+    border: 1px solid #1d9bf0;
     border-radius: 9999px;
     padding: 8px 16px;
     font-size: 14px;
     font-weight: 500;
     cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
     transition: background-color 0.2s;
-    position: relative;
-    overflow: hidden;
+    margin-left: 8px;
 }
 
-.secondary-button:hover {
-    background-color: #f7f9f9;
+.test-api-button:hover {
+    background-color: rgba(29, 155, 240, 0.1);
 }
 
-.secondary-button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
-
-/* Rate limit container */
-.rate-limit-container {
+/* API status message */
+.api-status {
     margin-top: 16px;
-}
-
-.rate-limit-progress {
-    height: 4px;
-    background-color: #eff3f4;
-    border-radius: 2px;
-    overflow: hidden;
-}
-
-.rate-limit-fill {
-    height: 100%;
-    background-color: #1d9bf0;
-    transition: width 0.3s;
-}
-
-.rate-limit-text {
-    font-size: 13px;
-    color: #536471;
+    padding: 12px;
+    border-radius: 8px;
+    background-color: #fee2e2;
+    color: #ef4444;
+    font-size: 14px;
     text-align: center;
-    margin-top: 4px;
 }
 
-/* Action buttons */
-.action-buttons {
-    display: flex;
-    gap: 8px;
+/* Error message styling */
+.error-message {
+    background-color: #fee2e2;
+    border-radius: 8px;
+    padding: 12px;
     margin-top: 16px;
+    color: #ef4444;
+    font-size: 14px;
+    text-align: center;
 }
 
-.action-buttons button {
-    flex: 1;
+/* Tab content - History section */
+.history-tab-content {
+    padding: 0 16px;
+}
+
+.history-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+}
+
+.clear-all-button {
+    background-color: transparent;
+    color: #1d9bf0;
+    border: none;
+    font-size: 14px;
+    cursor: pointer;
+    padding: 4px 8px;
+}
+
+.clear-all-button:hover {
+    text-decoration: underline;
 }
 
 /* Results container */
@@ -682,9 +752,9 @@ body {
     color: white;
     border: none;
     border-radius: 9999px;
-    padding: 8px 16px;
+    padding: 10px 20px;
     font-size: 14px;
-    font-weight: 700;
+    font-weight: 600;
     cursor: pointer;
     transition: background-color 0.2s;
 }
@@ -826,9 +896,10 @@ body {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 32px 16px;
+    padding: 24px;
     text-align: center;
     color: #536471;
+    height: 200px;
 }
 
 .empty-icon {
@@ -839,16 +910,15 @@ body {
 }
 
 .empty-state h3 {
-    font-size: 16px;
-    font-weight: 700;
+    margin-top: 16px;
+    font-size: 18px;
     color: #0f1419;
-    margin: 0 0 8px 0;
 }
 
 .empty-state p {
+    margin-top: 8px;
     font-size: 14px;
     color: #536471;
-    margin: 0;
 }
 
 /* Loading overlay */
@@ -1089,3 +1159,308 @@ body {
 .fadeIn {
     animation: fadeIn 0.3s ease-out forwards;
 }
+
+/* Add these styles to popup.css to improve the history display */
+
+/* History Item Styling */
+.history-item {
+  background-color: var(--bg-color, #ffffff);
+  border: 1px solid var(--border-color, #eff3f4);
+  border-radius: 12px;
+  margin-bottom: 16px;
+  padding: 16px;
+  animation: fadeIn 0.3s ease forwards;
+  position: relative;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.history-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+.history-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.history-item-user {
+  display: flex;
+  align-items: center;
+}
+
+.history-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  margin-right: 12px;
+  border: 1px solid var(--border-color, #eff3f4);
+  background-color: var(--secondary-color, #f7f9f9);
+}
+
+.history-item-user h4 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--primary-color, #1d9bf0);
+}
+
+.history-item-date {
+  font-size: 12px;
+  color: var(--text-secondary, #536471);
+}
+
+.history-item-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 16px;
+  background-color: var(--secondary-color, #f7f9f9);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.history-metric {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.history-metric .metric-value {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--primary-color, #1d9bf0);
+  margin-bottom: 4px;
+}
+
+.history-metric .metric-label {
+  font-size: 12px;
+  color: var(--text-secondary, #536471);
+}
+
+.history-item-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.view-profile-button {
+  flex: 1;
+  padding: 8px 12px;
+  background-color: rgba(29, 155, 240, 0.1);
+  color: var(--primary-color, #1d9bf0);
+  border: none;
+  border-radius: 16px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.view-profile-button:hover {
+  background-color: rgba(29, 155, 240, 0.2);
+}
+
+.delete-history-button {
+  background-color: transparent;
+  color: var(--text-secondary, #536471);
+  border: none;
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 0.2s, color 0.2s;
+}
+
+.delete-history-button:hover {
+  background-color: rgba(244, 33, 46, 0.1);
+  color: var(--error-color, #f4212e);
+}
+
+.empty-history {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  text-align: center;
+}
+
+.empty-history .empty-icon {
+  color: var(--border-color, #eff3f4);
+  margin-bottom: 16px;
+}
+
+.empty-history h3 {
+  margin: 0 0 8px 0;
+  color: var(--text-color, #0f1419);
+  font-weight: 600;
+}
+
+.empty-history p {
+  margin: 0;
+  color: var(--text-secondary, #536471);
+  font-size: 14px;
+}
+
+/* History badge */
+.badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--primary-color, #1d9bf0);
+  color: white;
+  border-radius: 12px;
+  font-size: 10px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  position: absolute;
+  top: 0;
+  right: 6px;
+  transform: translateY(-50%);
+}
+
+/* Animation for history items */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Adding a removing animation */
+.history-item.removing {
+  animation: slideOut 0.3s ease forwards;
+}
+
+@keyframes slideOut {
+  to {
+    opacity: 0;
+    transform: translateX(30px);
+  }
+}
+
+/* Add styles for proxy status indicator */
+.proxy-status {
+  margin-top: 15px;
+  text-align: center;
+  font-size: 13px;
+  animation: fadeIn 0.5s ease-in-out;
+}
+
+.proxy-indicator {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  border-radius: 16px;
+  background-color: rgba(0, 0, 0, 0.08);
+  color: #555;
+}
+
+.dark-theme .proxy-indicator {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: #ccc;
+}
+
+.proxy-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 8px;
+  background-color: #999;
+}
+
+.proxy-indicator.connecting .proxy-dot {
+  background-color: #f1c40f;
+  animation: pulse 1.5s infinite;
+}
+
+.proxy-indicator.connected .proxy-dot {
+  background-color: #2ecc71;
+}
+
+.proxy-indicator.direct .proxy-dot {
+  background-color: #3498db;
+}
+
+.proxy-status-area {
+  margin-top: 15px;
+  padding: 12px;
+  border-radius: 8px;
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+.dark-theme .proxy-status-area {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+/* Animation for the pulsing dot */
+@keyframes pulse {
+  0% { opacity: 0.4; }
+  50% { opacity: 1; }
+  100% { opacity: 0.4; }
+}
+
+/* Error card styling */
+.error-card {
+  padding: 16px;
+  background-color: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  margin-bottom: 16px;
+}
+
+.dark-theme .error-card {
+  background-color: #222;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.error-card h3 {
+  margin-top: 0;
+  color: #e74c3c;
+}
+
+.error-card p {
+  margin: 8px 0;
+}
+
+.error-card .error-message {
+  padding: 8px 12px;
+  background-color: rgba(231, 76, 60, 0.1);
+  border-left: 3px solid #e74c3c;
+  margin: 12px 0;
+  font-family: monospace;
+  word-break: break-word;
+}
+
+.error-card ol, 
+.error-card ul {
+  padding-left: 24px;
+  margin: 12px 0;
+}
+
+.error-card li {
+  margin-bottom: 8px;
+}
+
+.error-card .action-buttons {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+/* This should be at the end of the file to ensure it doesn't get overridden */

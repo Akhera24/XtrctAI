@@ -1,13 +1,59 @@
-// Import the grokService module using ES modules syntax
-import * as grokService from './grokService.js';
+// Import required modules
+import { makeAuthenticatedRequest, handleApiError } from './auth-handler.js';
 import { iconManager } from './iconManager.js';
-import { twitter, grokAi } from '../env.js';
+import { ProxyManager, config as proxyConfig } from './proxy-config.js';
+import { twitter, apiValidation, proxyUrl, grokAi } from '../env.js';
+
+// Add this near the top of the file, after other imports
+self.importScripts = self.importScripts || (() => {});
+
+// Add these lines at the top of the file to keep service worker alive
+let keepAliveInterval;
+
+function setupKeepAlive() {
+  // Disable any existing keepalive
+  if (keepAliveInterval) clearInterval(keepAliveInterval);
+  
+  // Create an interval to keep the service worker alive
+  keepAliveInterval = setInterval(() => {
+    console.log('Background service worker keepalive ping');
+  }, 20000); // Every 20 seconds
+}
+
+// Initialize the keepalive
+setupKeepAlive();
+
+// Register the service worker
+self.addEventListener('install', (event) => {
+  console.log('Background service worker installed');
+  self.skipWaiting(); // Activate service worker immediately
+  
+  // Initialize the extension
+  try {
+    initializeExtension();
+  } catch (error) {
+    console.error('Error during installation initialization:', error);
+  }
+});
+
+self.addEventListener('activate', (event) => {
+  console.log('Background service worker activated');
+  setupKeepAlive();
+  
+  // Call initialization on activation as well
+  try {
+    initializeExtension();
+  } catch (error) {
+    console.error('Error during activation initialization:', error);
+  }
+});
 
 // Log environment variables loading status
 console.log('Environment loading status:', {
   twitterConfig1: !!twitter?.config1?.bearerToken,
   twitterConfig2: !!twitter?.config2?.bearerToken,
-  grokApiKey: !!grokAi?.apiKey
+  grokApiKey: !!grokAi?.apiKey,
+  apiValidation: apiValidation
 });
 
 // Initialize the extension state
@@ -28,6 +74,12 @@ chrome.runtime.onInstalled.addListener(() => {
     rateLimit: { count: 0, resetTime: Date.now() + 3600000 }
   });
   
+  // Store bearer tokens in local storage for easier access
+  chrome.storage.local.set({
+    bearerToken: twitter.config1.bearerToken,
+    bearerToken2: twitter.config2.bearerToken
+  });
+  
   // Create context menu to open in floating mode
   chrome.contextMenus.create({
     id: "open-floating",
@@ -43,13 +95,13 @@ chrome.runtime.onInstalled.addListener(() => {
  * @constant {Object} API_CONFIG
  */
 const API_CONFIG = {
-    X_API_KEY: twitter.config1.xApiKey || process.env.TWITTER_API_1_X_API_KEY,
-    CLIENT_ID: twitter.config1.clientId || process.env.TWITTER_API_1_CLIENT_ID,
-    CLIENT_SECRET: twitter.config1.clientSecret || process.env.TWITTER_API_1_CLIENT_SECRET,
-    BEARER_TOKEN: twitter.config1.bearerToken || process.env.TWITTER_API_1_BEARER_TOKEN,
-    ACCESS_TOKEN: twitter.config1.accessToken || process.env.TWITTER_API_1_ACCESS_TOKEN,
-    ACCESS_TOKEN_SECRET: twitter.config1.accessTokenSecret || process.env.TWITTER_API_1_ACCESS_TOKEN_SECRET,
-    API_BASE_URL: twitter.config1.baseUrl || process.env.TWITTER_API_1_BASE_URL || 'https://api.twitter.com/2'
+    X_API_KEY: twitter.config1.xApiKey,
+    CLIENT_ID: twitter.config1.clientId,
+    CLIENT_SECRET: twitter.config1.clientSecret,
+    BEARER_TOKEN: twitter.config1.bearerToken,
+    ACCESS_TOKEN: twitter.config1.accessToken,
+    ACCESS_TOKEN_SECRET: twitter.config1.accessTokenSecret,
+    API_BASE_URL: twitter.config1.baseUrl || 'https://api.twitter.com/2'
 };
 
 /**
@@ -60,20 +112,20 @@ const API_CONFIG = {
  * @constant {Object} API_CONFIG2 
  */
 const API_CONFIG2 = {
-    X_API_KEY: twitter.config2.xApiKey || process.env.TWITTER_API_2_X_API_KEY,
-    X_API_KEY_SECRET: twitter.config2.xApiKeySecret || process.env.TWITTER_API_2_X_API_KEY_SECRET,
-    CLIENT_ID: twitter.config2.clientId || process.env.TWITTER_API_2_CLIENT_ID,
-    CLIENT_SECRET: twitter.config2.clientSecret || process.env.TWITTER_API_2_CLIENT_SECRET,
-    BEARER_TOKEN: twitter.config2.bearerToken || process.env.TWITTER_API_2_BEARER_TOKEN,
-    ACCESS_TOKEN: twitter.config2.accessToken || process.env.TWITTER_API_2_ACCESS_TOKEN,
-    ACCESS_TOKEN_SECRET: twitter.config2.accessTokenSecret || process.env.TWITTER_API_2_ACCESS_TOKEN_SECRET,
-    API_BASE_URL: twitter.config2.baseUrl || process.env.TWITTER_API_2_BASE_URL || 'https://api.twitter.com/2'
+    X_API_KEY: twitter.config2.xApiKey,
+    X_API_KEY_SECRET: twitter.config2.xApiKeySecret,
+    CLIENT_ID: twitter.config2.clientId,
+    CLIENT_SECRET: twitter.config2.clientSecret,
+    BEARER_TOKEN: twitter.config2.bearerToken,
+    ACCESS_TOKEN: twitter.config2.accessToken,
+    ACCESS_TOKEN_SECRET: twitter.config2.accessTokenSecret,
+    API_BASE_URL: twitter.config2.baseUrl || 'https://api.twitter.com/2'
 };
 
 // API keys for grok AI 
 const API_CONFIG3 = {
-    API_KEY: grokAi.apiKey || process.env.GROK_AI_API_KEY,
-    API_BASE_URL: grokAi.baseUrl || process.env.GROK_AI_BASE_URL || 'https://api.grok.com/v1'
+    API_KEY: grokAi.apiKey,
+    API_BASE_URL: grokAi.baseUrl || 'https://api.grok.com/v1'
 };
 
 // Log API configuration status
@@ -106,9 +158,6 @@ const RATE_LIMITS = {
     }
 };
 
-// Reduced minimum time between requests to 5 seconds
-const MIN_REQUEST_INTERVAL = 5000;
-
 // Cache for storing analyzed profiles
 const profileCache = new Map();
 
@@ -122,1697 +171,997 @@ chrome.storage.local.set({
     console.log('Configurations stored');
 });
 
-// Helper function to get stored API configuration
-async function getAPIConfig() {
-    return new Promise((resolve) => {
-        chrome.storage.local.get(['apiConfig1', 'apiConfig2', 'rateLimits', 'activeConfigNum'], (result) => {
-            console.log('Stored API configs:', {
-                hasConfig1: !!result.apiConfig1,
-                hasConfig2: !!result.apiConfig2,
-                hasRateLimits: !!result.rateLimits,
-                activeConfigNum: result.activeConfigNum
-            });
-            
-            // Initialize configs with fallback values if not found in storage
-            const config1 = result.apiConfig1 || API_CONFIG;
-            const config2 = result.apiConfig2 || API_CONFIG2;
-            
-            // Check if configs are valid
-            const isConfig1Valid = !!(config1.BEARER_TOKEN && config1.API_BASE_URL);
-            const isConfig2Valid = !!(config2.BEARER_TOKEN && config2.API_BASE_URL);
-            
-            console.log('API config validation:', {
-                isConfig1Valid,
-                isConfig2Valid
-            });
-            
-            // If no valid configs, use hardcoded defaults as a last resort
-            if (!isConfig1Valid && !isConfig2Valid) {
-                console.warn('No valid configs found, using hardcoded defaults');
-                resolve({
-                    config: {
-                        BEARER_TOKEN: '***REMOVED_BEARER_TOKEN***',
-                        API_BASE_URL: 'https://api.twitter.com/2'
-                    },
-                    configNum: 1
-                });
-                return;
-            }
-            
-            const limits = result.rateLimits || RATE_LIMITS;
-            const config1Used = limits.config1?.readRequests.used || 0;
-            const config2Used = limits.config2?.readRequests.used || 0;
-            const config1Total = limits.config1?.readRequests.total || 50;
-            const config2Total = limits.config2?.readRequests.total || 50;
-            
-            // If we're at the limit for both configs, use the one that resets sooner
-            if (config1Used >= config1Total && config2Used >= config2Total) {
-                const config1Reset = new Date(limits.config1.readRequests.resetDate);
-                const config2Reset = new Date(limits.config2.readRequests.resetDate);
-                
-                resolve({
-                    config: config1Reset < config2Reset ? config1 : config2,
-                    configNum: config1Reset < config2Reset ? 1 : 2
-                });
-                return;
-            }
-            
-            // If one config is at limit, use the other
-            if (config1Used >= config1Total) {
-                resolve({
-                    config: config2,
-                    configNum: 2
-                });
-                return;
-            }
-            
-            if (config2Used >= config2Total) {
-                resolve({
-                    config: config1,
-                    configNum: 1
-                });
-                return;
-            }
-            
-            // Otherwise use the configured active config, or config1 as default
-            const activeConfigNum = result.activeConfigNum || 1;
-            resolve({
-                config: activeConfigNum === 1 ? config1 : config2,
-                configNum: activeConfigNum
-            });
-        });
-    });
-}
-
-// Helper function for forced delay
-async function forceDelay() {
-    return new Promise(resolve => setTimeout(resolve, MIN_REQUEST_INTERVAL));
-}
-
-// Helper function to check rate limits for specific config
-async function checkRateLimits(configNum) {
-    return new Promise((resolve, reject) => {
-        chrome.storage.local.get(['rateLimits'], (result) => {
-            const configKey = `config${configNum}`;
-            const limits = result.rateLimits && result.rateLimits[configKey] 
-                ? result.rateLimits[configKey] 
-                : RATE_LIMITS[configKey];
-                
-            const now = Date.now();
-
-            // Reset counters if needed
-            if (now >= new Date(limits.readRequests.resetDate)) {
-                limits.readRequests.used = 0;
-                limits.readRequests.resetDate = new Date().setMonth(new Date().getMonth() + 1);
-                
-                // Update storage
-                const updatedLimits = result.rateLimits || RATE_LIMITS;
-                updatedLimits[configKey] = limits;
-                chrome.storage.local.set({ rateLimits: updatedLimits });
-            }
-
-            // Check if we've hit the rate limit
-            if (limits.readRequests.used >= limits.readRequests.total) {
-                reject(new Error(`Monthly rate limit exceeded for API config #${configNum}. Resets on ${new Date(limits.readRequests.resetDate).toLocaleDateString()}`));
-                return;
-            }
-
-            // Always enforce the minimum delay
-            resolve(limits);
-        });
-    });
-}
-
-// Function to update rate limit counter for specific config
-async function incrementRateLimit(configNum) {
-    return new Promise((resolve) => {
-        chrome.storage.local.get(['rateLimits'], (result) => {
-            const configKey = `config${configNum}`;
-            const updatedLimits = result.rateLimits || RATE_LIMITS;
-            
-            if (!updatedLimits[configKey]) {
-                updatedLimits[configKey] = RATE_LIMITS[configKey];
-            }
-            
-            updatedLimits[configKey].readRequests.used += 1;
-            updatedLimits[configKey].readRequests.lastRequestTime = Date.now();
-            
-            chrome.storage.local.set({ rateLimits: updatedLimits }, () => resolve(updatedLimits[configKey].readRequests));
-        });
-    });
-}
-
-// Helper function to make authenticated requests to the Twitter API
-async function makeAuthenticatedRequest(endpoint, method = 'GET', data = null) {
+// Make an authenticated API request using the auth handler
+async function handleApiRequest(url, customBearerToken = null) {
+  console.log(`Making authenticated request to ${url.split('?')[0]}...`);
+  
   try {
-    // 1. Check rate limits and choose appropriate API config
-    let { config, configNum } = await getAPIConfig();
-    let limits = await checkRateLimits(configNum);
+    // Extract endpoint and params from URL
+    let endpoint, params = {};
     
-    // Log config information for debugging
-    console.log('Making API request with config:', {
-      configNum,
-      baseUrl: config.API_BASE_URL,
-      hasBearerToken: !!config.BEARER_TOKEN,
-      endpoint
-    });
-    
-    // 2. Enforce delay between requests
-    await forceDelay();
-    
-    // 3. Prepare full URL - ensure correct API base URL
-    const baseUrl = config.API_BASE_URL || 'https://api.twitter.com/2';
-    const url = baseUrl + endpoint;
-    console.log(`API Request (using config #${configNum}): ${url}`);
-    
-    // 4. Prepare request options with proper CORS handling
-    const bearerToken = config.BEARER_TOKEN.trim();
-    
-    // Check if bearer token is URL encoded and decode if necessary
-    let cleanedToken = bearerToken;
-    if (bearerToken.includes('%')) {
-      try {
-        cleanedToken = decodeURIComponent(bearerToken);
-      } catch (e) {
-        console.warn('Error decoding bearer token, using as-is');
-        cleanedToken = bearerToken;
-      }
+    if (url.includes('?')) {
+      const [path, queryString] = url.split('?');
+      endpoint = path;
+      
+      // Parse query params
+      const searchParams = new URLSearchParams(queryString);
+      searchParams.forEach((value, key) => {
+        params[key] = value;
+      });
+    } else {
+      endpoint = url;
     }
-    
-    const headers = {
-      'Authorization': `Bearer ${cleanedToken}`,
-      'Content-Type': 'application/json',
-      'Accept': 'application/json'
-    };
     
     const options = {
-      method: method,
-      headers: headers,
-      mode: 'cors',
-      credentials: 'omit'  // Important for CORS in extension context
+      method: 'GET',
+      params
     };
     
-    if (data && (method === 'POST' || method === 'PUT')) {
-      options.body = JSON.stringify(data);
-    }
-    
-    // 5. Make the request with the first config
-    let response;
-    let success = false;
-    let errorMessage = '';
-    
-    try {
-      console.log(`Making API request to ${url} with options:`, {
-        method: options.method,
-        headerKeys: Object.keys(options.headers),
-        mode: options.mode
+    // Use custom bearer token if provided
+    if (customBearerToken) {
+      // Create temporary config for testing
+      const testConfig = {
+        bearerToken: customBearerToken,
+        baseUrl: 'https://api.twitter.com/2',
+        rateLimits: { remaining: 50, reset: Date.now() + 900000 },
+        isValid: true
+      };
+      
+      return await makeAuthenticatedRequest(endpoint, {
+        ...options,
+        bearerToken: customBearerToken
       });
-      
-      // Add some randomness to bypass cache
-      const cacheBuster = Date.now();
-      const urlWithNoCacheParam = url.includes('?') ? 
-        `${url}&_nocache=${cacheBuster}` : 
-        `${url}?_nocache=${cacheBuster}`;
-        
-      response = await fetch(urlWithNoCacheParam, options);
-      
-      console.log('Response status:', response.status);
-      
-      // If response status is not ok, try to get error message
-      if (!response.ok) {
-        let responseText;
-        try {
-          responseText = await response.text();
-          console.error(`Response error text: ${responseText}`);
-          
-          try {
-            const errorBody = JSON.parse(responseText);
-            errorMessage = errorBody.errors?.[0]?.message || errorBody.detail || `API error: ${response.status}`;
-          } catch (jsonError) {
-            errorMessage = `API error: ${response.status} - ${responseText}`;
-          }
-        } catch (e) {
-          errorMessage = `API error: ${response.status}`;
-          responseText = 'Could not read response text';
-        }
-        
-        console.error(`API request failed with ${response.status}: ${errorMessage}`);
-        console.error('Response headers:', {
-          contentType: response.headers.get('content-type'),
-          contentLength: response.headers.get('content-length'),
-          server: response.headers.get('server'),
-          responseText
-        });
-        
-        // Increment rate limit counter only for client errors
-        if (response.status >= 400 && response.status < 500) {
-          await incrementRateLimit(configNum);
-        }
-        
-        // If rate limited or unauthorized, try with second config
-        if ((response.status === 429 || response.status === 401 || response.status === 403) && configNum === 1) {
-          console.log('Trying with second API config...');
-          const isAvailable = await isConfig2Available();
-          
-          if (isAvailable) {
-            // Get the second config and try again
-            const configResult = await getAPIConfig();
-            config = configResult.config;
-            configNum = 2;
-            
-            // Clean the second token as well
-            const secondBearerToken = config.BEARER_TOKEN.trim();
-            let secondCleanedToken = secondBearerToken;
-            if (secondBearerToken.includes('%')) {
-              try {
-                secondCleanedToken = decodeURIComponent(secondBearerToken);
-              } catch (e) {
-                console.warn('Error decoding second bearer token, using as-is');
-                secondCleanedToken = secondBearerToken;
-              }
-            }
-            
-            headers.Authorization = `Bearer ${secondCleanedToken}`;
-            options.headers = headers;
-            
-            console.log('Retrying with second config:', {
-              baseUrl: config.API_BASE_URL,
-              hasBearerToken: !!config.BEARER_TOKEN
-            });
-            
-            response = await fetch(urlWithNoCacheParam, options);
-            console.log('Second attempt response status:', response.status);
-
-            if (!response.ok) {
-              try {
-                const errorResponseText = await response.text();
-                console.error(`Second attempt response error text: ${errorResponseText}`);
-                
-                try {
-                  const errorBody = JSON.parse(errorResponseText);
-                  errorMessage = errorBody.errors?.[0]?.message || errorBody.detail || `API error: ${response.status}`;
-                } catch (jsonError) {
-                  errorMessage = `API error: ${response.status} - ${errorResponseText}`;
-                }
-              } catch (e) {
-                errorMessage = `API error: ${response.status}`;
-              }
-              
-              console.error(`Second API request failed with ${response.status}: ${errorMessage}`);
-              await incrementRateLimit(configNum);
-              throw new Error(errorMessage);
-            } else {
-              // Second request succeeded
-              success = true;
-            }
-          } else {
-            throw new Error(`API rate limit exceeded: ${errorMessage}`);
-          }
-        } else {
-          throw new Error(errorMessage);
-        }
-      } else {
-        // First request succeeded
-        success = true;
-      }
-      
-      // Process successful response
-      if (success) {
-        // Increment rate limit counter for successful requests
-        await incrementRateLimit(configNum);
-        
-        try {
-          const responseData = await response.json();
-          
-          // Get current rate limits
-          const rateLimits = await new Promise(resolve => {
-            chrome.storage.local.get(['rateLimits'], (data) => {
-              resolve(data.rateLimits || RATE_LIMITS);
-            });
-          });
-          
-          // Add rate limit info to response
-          const configKey = `config${configNum}`;
-          const rateLimit = {
-            used: rateLimits[configKey]?.readRequests.used || 0,
-            total: rateLimits[configKey]?.readRequests.total || 50,
-            resetDate: rateLimits[configKey]?.readRequests.resetDate || Date.now() + 2592000000, // Default: 30 days
-            configNum: configNum
-          };
-          
-          // Return formatted response
-          return {
-            success: true,
-            data: responseData,
-            rateLimit: rateLimit
-          };
-        } catch (jsonError) {
-          console.error('Error parsing JSON response:', jsonError);
-          throw new Error('Failed to parse API response');
-        }
-      }
-    } catch (fetchError) {
-      console.error('Fetch error:', fetchError);
-      throw fetchError;
     }
-  } catch (error) {
-    console.error('API Request Error:', error);
     
-    // Return formatted error response
-    return {
-      success: false,
-      error: error.message || 'Unknown API error',
-      errorDetails: error.stack
-    };
+    // Use the auth handler for authenticated requests with token rotation
+    return await makeAuthenticatedRequest(endpoint, options);
+  } catch (error) {
+    console.error('Authentication request failed:', error);
+    throw error;
   }
-}
-
-// Helper function to check if config2 is available and not rate limited
-async function isConfig2Available() {
-    return new Promise((resolve) => {
-        chrome.storage.local.get(['rateLimits', 'apiConfig2'], (data) => {
-            if (!data.apiConfig2 || !data.apiConfig2.BEARER_TOKEN) {
-                resolve(false);
-                return;
-            }
-            
-            const limits = data.rateLimits?.config2?.readRequests;
-            if (!limits) {
-                resolve(true);
-                return;
-            }
-            
-            resolve(limits.used < limits.total);
-        });
-    });
-}
-
-// Helper function to check if config1 is available and not rate limited
-async function isConfig1Available() {
-    return new Promise((resolve) => {
-        chrome.storage.local.get(['rateLimits', 'apiConfig1'], (data) => {
-            if (!data.apiConfig1 || !data.apiConfig1.BEARER_TOKEN) {
-                resolve(false);
-                return;
-            }
-            
-            const limits = data.rateLimits?.config1?.readRequests;
-            if (!limits) {
-                resolve(true);
-                return;
-            }
-            
-            resolve(limits.used < limits.total);
-        });
-    });
 }
 
 function analyzePostingStrategy(userData, tweets) {
-    const strategy = {
-        contentTypes: {
-            text: 0,
-            media: 0,
-            links: 0
-        },
-        recommendations: []
+    const postingTimes = calculateBestPostingTimes(tweets);
+    const engagementRate = calculateEngagementRate(tweets);
+    const topContent = getTopPerformingContent(tweets);
+
+    return {
+        postingFrequency: tweets.length > 0 ? (tweets.length / 30).toFixed(1) + ' tweets/day (estimated)' : 'Unknown',
+        bestPostingTimes: postingTimes,
+        engagementRate: engagementRate,
+        topPerformingContent: topContent,
+        recommendedStrategy: generateRecommendations(engagementRate, postingTimes, userData)
     };
-
-    // Simple content type analysis
-    tweets.forEach(tweet => {
-        if (tweet.entities?.urls?.length > 0) strategy.contentTypes.links++;
-        if (tweet.attachments?.media_keys?.length > 0 || 
-            tweet.entities?.media?.length > 0) strategy.contentTypes.media++;
-        else strategy.contentTypes.text++;
-    });
-
-    // Basic recommendations based on follower count
-    const followers = userData.public_metrics?.followers_count || 0;
-
-    if (followers < 1000) {
-        strategy.recommendations = [
-            "Engage with conversations in your niche",
-            "Use 1-2 relevant hashtags per post",
-            "Focus on consistent daily posting"
-        ];
-    } else if (followers < 10000) {
-        strategy.recommendations = [
-            "Create more original content",
-            "Balance engagement with content creation",
-            "Build your unique voice"
-        ];
-    } else {
-        strategy.recommendations = [
-            "Leverage your audience for partnerships",
-            "Maintain consistent brand messaging",
-            "Experiment with different content formats"
-        ];
-    }
-
-    return strategy;
 }
 
-/**
- * Calculates the engagement rate for a collection of tweets
- * Engagement rate = (total engagements / (total tweets * 100)) * 100
- * @param {Array} tweets - Array of tweet objects containing public_metrics
- * @returns {string} Engagement rate as a percentage with 2 decimal places
- */
 function calculateEngagementRate(tweets) {
-    if (!tweets || tweets.length === 0) return "0.00";
+    if (!tweets || tweets.length === 0) return 'Unknown';
     
     let totalEngagement = 0;
-    let totalPossibleEngagement = 0;
     
     tweets.forEach(tweet => {
-        const metrics = tweet.public_metrics || {};
-        // Sum of likes, retweets, and replies represents total engagement
-        totalEngagement += (metrics.like_count || 0) + 
-                         (metrics.retweet_count || 0) + 
-                         (metrics.reply_count || 0);
-        totalPossibleEngagement += 1; // Each tweet represents an engagement opportunity
+        const likes = tweet.public_metrics?.like_count || 0;
+        const replies = tweet.public_metrics?.reply_count || 0;
+        const retweets = tweet.public_metrics?.retweet_count || 0;
+        const quotes = tweet.public_metrics?.quote_count || 0;
+        
+        totalEngagement += likes + replies + retweets + quotes;
     });
     
-    return ((totalEngagement / (totalPossibleEngagement * 100)) * 100).toFixed(2);
+    const averageEngagement = totalEngagement / tweets.length;
+    const followerCount = tweets[0]?.author_metrics?.followers_count || 1;
+    
+    return ((averageEngagement / followerCount) * 100).toFixed(2) + '%';
 }
 
-/**
- * Analyzes tweets to determine the most effective posting times
- * Groups tweets by hour and calculates average engagement for each hour
- * @param {Array} tweets - Array of tweet objects with created_at and public_metrics
- * @returns {Array} Top 3 hours with highest average engagement
- */
 function calculateBestPostingTimes(tweets) {
     if (!tweets || tweets.length === 0) return [];
     
-    // Create hourly engagement tracking object
+    // Create a map to track engagement by hour
     const hourlyEngagement = {};
     
+    // Initialize hours
+    for (let i = 0; i < 24; i++) {
+        hourlyEngagement[i] = {
+            count: 0,
+            engagement: 0
+        };
+    }
+    
+    // Analyze tweets
     tweets.forEach(tweet => {
-        if (!tweet.created_at) return;
+        const tweetDate = new Date(tweet.created_at);
+        const hour = tweetDate.getHours();
         
-        const hour = new Date(tweet.created_at).getHours();
-        const metrics = tweet.public_metrics || {};
-        const engagement = (metrics.like_count || 0) + 
-                         (metrics.retweet_count || 0) + 
-                         (metrics.reply_count || 0);
+        const likes = tweet.public_metrics?.like_count || 0;
+        const replies = tweet.public_metrics?.reply_count || 0;
+        const retweets = tweet.public_metrics?.retweet_count || 0;
+        const quotes = tweet.public_metrics?.quote_count || 0;
         
-        // Initialize hour data if not exists
-        if (!hourlyEngagement[hour]) {
-            hourlyEngagement[hour] = { total: 0, count: 0 };
-        }
+        const engagement = likes + replies + retweets + quotes;
         
-        // Accumulate engagement data
-        hourlyEngagement[hour].total += engagement;
-        hourlyEngagement[hour].count += 1;
+        hourlyEngagement[hour].count++;
+        hourlyEngagement[hour].engagement += engagement;
     });
     
-    // Transform and sort by average engagement
-    return Object.entries(hourlyEngagement)
-        .map(([hour, data]) => ({
-            hour,
-            average_engagement: (data.total / data.count).toFixed(1)
-        }))
-        .sort((a, b) => b.average_engagement - a.average_engagement)
-        .slice(0, 3); // Return top 3 performing hours
+    // Find the best hours
+    const bestHours = Object.keys(hourlyEngagement)
+        .filter(hour => hourlyEngagement[hour].count > 0)
+        .sort((a, b) => {
+            const avgA = hourlyEngagement[a].engagement / hourlyEngagement[a].count;
+            const avgB = hourlyEngagement[b].engagement / hourlyEngagement[b].count;
+            return avgB - avgA;
+        })
+        .slice(0, 3);
+    
+    return bestHours.map(hour => {
+        const hourNum = parseInt(hour);
+        const ampm = hourNum >= 12 ? 'PM' : 'AM';
+        const hour12 = hourNum % 12 || 12;
+        return `${hour12} ${ampm}`;
+    });
 }
 
-/**
- * Identifies the top performing tweets based on total engagement
- * @param {Array} tweets - Array of tweet objects with public_metrics
- * @returns {Array} Top 3 tweets with highest engagement
- */
 function getTopPerformingContent(tweets) {
     if (!tweets || tweets.length === 0) return [];
     
-    // Calculate total engagement for each tweet
+    // Calculate engagement for each tweet
     const tweetsWithEngagement = tweets.map(tweet => {
-        const metrics = tweet.public_metrics || {};
-        const engagement = (metrics.like_count || 0) + 
-                         (metrics.retweet_count || 0) + 
-                         (metrics.reply_count || 0);
+        const likes = tweet.public_metrics?.like_count || 0;
+        const replies = tweet.public_metrics?.reply_count || 0;
+        const retweets = tweet.public_metrics?.retweet_count || 0;
+        const quotes = tweet.public_metrics?.quote_count || 0;
         
         return {
             text: tweet.text,
-            engagement,
-            created_at: tweet.created_at
+            engagement: likes + replies + retweets + quotes,
+            categories: detectCategories(tweet.text)
         };
     });
     
-    // Return top 3 tweets by engagement
+    // Get top 3 by engagement
     return tweetsWithEngagement
         .sort((a, b) => b.engagement - a.engagement)
-        .slice(0, 3);
+        .slice(0, 3)
+        .map(t => t.categories)
+        .flat()
+        .filter((value, index, self) => self.indexOf(value) === index) // Remove duplicates
+        .slice(0, 5); // Limit to top 5 categories
 }
 
-/**
- * Aggregates all analytics calculations for a set of tweets
- * @param {Array} tweets - Array of tweet objects
- * @returns {Object} Combined analytics including engagement rate, posting times, and top content
- */
 function calculateAnalytics(tweets) {
-    return {
-        engagement_rate: calculateEngagementRate(tweets),
-        best_posting_times: calculateBestPostingTimes(tweets),
-        top_performing_content: getTopPerformingContent(tweets)
-    };
+    // Implement your analytics calculation logic here
+    return {};
 }
 
-/**
- * Get user data from Twitter API or cache
- * @param {string} username - Twitter username without @ symbol
- * @returns {Promise<Object>} - User data response
- */
 async function getUserData(username) {
+    console.log(`Getting user data for ${username}`);
+    
     try {
-        console.log(`Getting user data for: ${username}`);
-        
-        if (!username || typeof username !== 'string') {
+        // Check cache first
+        const cachedData = await getCachedData(username);
+        if (cachedData) {
+            console.log(`Using cached data for ${username}`);
             return {
-                success: false,
-                error: 'Invalid username provided',
-                errorDetails: 'Username must be a non-empty string'
+                success: true,
+                data: cachedData,
+                source: 'cache'
             };
         }
-
-        // Get settings
-        const settings = await getSettings();
-
-        // Check if this username is in cache
-        const cacheKey = `profile_${username.toLowerCase()}`;
-        const cachedData = await new Promise(resolve => {
-            chrome.storage.local.get([cacheKey], result => {
-                resolve(result[cacheKey]);
-            });
-        });
-
-        // Return cached data if it exists and is not expired
-        if (cachedData && settings.cacheEnabled) {
-            const now = Date.now();
-            const cacheAge = now - cachedData.timestamp;
+        
+        // User fields to retrieve
+        const userFields = [
+            'created_at',
+            'description',
+            'entities',
+            'id',
+            'location',
+            'name',
+            'pinned_tweet_id',
+            'profile_image_url',
+            'protected',
+            'public_metrics',
+            'url',
+            'verified',
+            'verified_type',
+            'username'
+        ].join(',');
+        
+        // Build API URL
+        const url = `users/by/username/${username}?user.fields=${userFields}`;
+        
+        // Make the API request using our auth handler
+        const userData = await handleApiRequest(url);
             
-            // Cache is valid for 24 hours (86400000 ms)
-            if (cacheAge < 86400000) {
-                console.log(`Returning cached data for ${username}, age: ${Math.round(cacheAge / 60000)} minutes`);
+        // Get recent tweets for the user
+        const tweets = await getTweets(username, 50);
+            
+        // Process all the data
+        const followersCount = userData.data.public_metrics.followers_count;
+        const followingCount = userData.data.public_metrics.following_count;
+        const tweetCount = userData.data.public_metrics.tweet_count;
+            
+        const followerRatio = followingCount > 0 
+            ? (followersCount / followingCount).toFixed(2) 
+            : 'N/A';
+            
+        // Calculate account age in days
+        const createdDate = new Date(userData.data.created_at);
+        const now = new Date();
+        const accountAgeMs = now - createdDate;
+        const accountAgeDays = Math.floor(accountAgeMs / (1000 * 60 * 60 * 24));
+            
+        // Calculate tweets per day
+        const tweetsPerDay = (tweetCount / accountAgeDays).toFixed(2);
+            
+        // Analyze posting strategy
+        const postingStrategy = analyzePostingStrategy(userData.data, tweets);
+            
+        // Prepare results
+        const results = {
+            username: userData.data.username,
+            displayName: userData.data.name,
+            profileImageUrl: userData.data.profile_image_url,
+            description: userData.data.description,
+            verified: userData.data.verified,
+            verifiedType: userData.data.verified_type || 'none',
+            accountStats: {
+                followersCount,
+                followingCount,
+                tweetCount,
+                followerRatio,
+                accountAgeDays,
+                accountCreated: createdDate.toDateString(),
+                tweetsPerDay,
+                isProtected: userData.data.protected
+            },
+            postingStrategy,
+            location: userData.data.location || 'Not specified',
+            url: userData.data.url,
+            rawUserData: userData.data,
+            recentTweets: tweets
+        };
+            
+        // Cache the results
+        await cacheData(username, results);
+            
+        // Return results
+        return {
+            success: true,
+            data: results,
+            source: 'api'
+        };
+    } catch (error) {
+        console.error('Error fetching user data:', error);
+            
+        // Check if we have a connection error
+        if (error.message.includes('Failed to fetch') || 
+            error.message.includes('Network Error') || 
+            error.message.includes('CORS error')) {
                 
-                // Set the fromCache flag to let UI know
-                cachedData.fromCache = true;
-                return {
-                    success: true,
-                    ...cachedData
-                };
-            } else {
-                console.log(`Cache expired for ${username}, fetching fresh data`);
-            }
-        } else {
-            console.log(`No cache found for ${username} or cache disabled, fetching fresh data`);
-        }
-
-        // Fetch user data from API
-        try {
-            console.log(`Fetching user data for ${username} from Twitter API`);
-            
-            // Get API config first
-            const { config, configNum } = await getAPIConfig();
-            
-            // Log the config being used
-            console.log('Using API config:', {
-                configNum,
-                baseUrl: config.API_BASE_URL,
-                hasBearerToken: !!config.BEARER_TOKEN,
-                bearerTokenFirst15Chars: config.BEARER_TOKEN ? config.BEARER_TOKEN.substring(0, 15) + '...' : 'none'
-            });
-            
-            // Prepare the request options
-            const headers = {
-                'Authorization': `Bearer ${config.BEARER_TOKEN}`,
-                'Content-Type': 'application/json'
-            };
-            
-            const options = {
-                method: 'GET',
-                headers
-            };
-            
-            // Use direct fetch for user data instead of makeAuthenticatedRequest for better debugging
-            const userUrl = `${config.API_BASE_URL}/users/by/username/${username}?user.fields=public_metrics,description,profile_image_url,created_at,verified`;
-            console.log(`Fetching from URL: ${userUrl}`);
-            
-            // Add unique timestamp to avoid caching issues
-            const cacheBuster = Date.now();
-            const userUrlNoCached = `${userUrl}&_nocache=${cacheBuster}`;
-            
-            // Fetch user data
-            const userResponse = await fetch(userUrlNoCached, options);
-            
-            if (!userResponse.ok) {
-                const statusText = userResponse.statusText;
-                let errorText = '';
-                
-                try {
-                    errorText = await userResponse.text();
-                    console.error(`Error response from Twitter API: ${errorText}`);
-                } catch (e) {
-                    console.error('Could not read error response text');
-                }
-                
-                // If we get an error, try the second config if available
-                if ((userResponse.status === 429 || userResponse.status === 401 || userResponse.status === 403) && configNum === 1) {
-                    console.log('First config failed, trying second config...');
-                    
-                    const isConfig2Available = await new Promise(resolve => {
-                        chrome.storage.local.get(['rateLimits'], data => {
-                            const limits = data.rateLimits || RATE_LIMITS;
-                            const config2Used = limits.config2?.readRequests.used || 0;
-                            const config2Total = limits.config2?.readRequests.total || 50;
-                            resolve(config2Used < config2Total);
-                        });
-                    });
-                    
-                    if (isConfig2Available) {
-                        const config2Result = await getAPIConfig(true);
-                        const config2 = config2Result.config;
-                        
-                        const headers2 = {
-                            'Authorization': `Bearer ${config2.BEARER_TOKEN}`,
-                            'Content-Type': 'application/json'
-                        };
-                        
-                        const options2 = {
-                            method: 'GET',
-                            headers: headers2
-                        };
-                        
-                        console.log('Trying with second config:', {
-                            baseUrl: config2.API_BASE_URL,
-                            hasBearerToken: !!config2.BEARER_TOKEN
-                        });
-                        
-                        const userResponse2 = await fetch(userUrlNoCached, options2);
-                        
-                        if (!userResponse2.ok) {
-                            const status2 = userResponse2.status;
-                            const statusText2 = userResponse2.statusText;
-                            let errorText2 = '';
-                            
-                            try {
-                                errorText2 = await userResponse2.text();
-                                console.error(`Error response from second config: ${errorText2}`);
-                            } catch (e) {
-                                console.error('Could not read error response text for second config');
-                            }
-                            
-                            await incrementRateLimit(2);
-                            throw new Error(`API error (config2): ${status2} ${statusText2} - ${errorText2}`);
-                        }
-                        
-                        // Parse the response from the second config
-                        const userData2 = await userResponse2.json();
-                        await incrementRateLimit(2);
-                        
-                        if (!userData2.data) {
-                            throw new Error('User not found or API returned invalid data (config2)');
-                        }
-                        
-                        // Second config success - proceed with this data
-                        return await processUserData(userData2, username, config2, 2);
-                    } else {
-                        throw new Error(`API error (config1): ${userResponse.status} ${statusText} - ${errorText}`);
-                    }
-                } else {
-                    throw new Error(`API error: ${userResponse.status} ${statusText} - ${errorText}`);
-                }
-            }
-
-            // Parse the response
-            const userData = await userResponse.json();
-            await incrementRateLimit(configNum);
-            
-            if (!userData.data) {
-                throw new Error('User not found or API returned invalid data');
-            }
-            
-            // Continue with processing
-            return await processUserData(userData, username, config, configNum);
-        } catch (apiError) {
-            console.error(`API error fetching data for ${username}:`, apiError);
-            
-            // Create a detailed error response with accurate error information
-            const errorResponse = {
-                success: false,
-                error: apiError.message || 'Error fetching profile data',
-                errorDetails: apiError.stack,
-                errorCode: apiError.code || 'UNKNOWN_ERROR'
-            };
-            
-            // Get current rate limits
-            const rateLimits = await new Promise(resolve => {
-                chrome.storage.local.get(['rateLimits'], (data) => {
-                    resolve(data.rateLimits || RATE_LIMITS);
-                });
-            });
-            
-            // Add rate limit info
-            const config1 = rateLimits.config1?.readRequests || { used: 0, total: 50 };
-            const config2 = rateLimits.config2?.readRequests || { used: 0, total: 50 };
-            errorResponse.rateLimit = {
-                used: config1.used + config2.used,
-                total: config1.total + config2.total,
-                resetDate: Math.min(
-                    config1.resetDate || Date.now() + 2592000000,
-                    config2.resetDate || Date.now() + 2592000000
-                )
-            };
-            
-            // Attempt to get fallback data from cache even if it's expired
+            // Try to get data from cache even if expired
             try {
-                const cachedData = await new Promise(resolve => {
-                    chrome.storage.local.get([cacheKey], result => {
-                        resolve(result[cacheKey]);
-                    });
-                });
-                
+                const cachedData = await getCachedData(username, true);
                 if (cachedData) {
-                    console.log(`Using expired cache data for ${username} as fallback`);
-                    cachedData.fromCache = true;
-                    cachedData.usingExpiredCache = true;
                     return {
                         success: true,
-                        ...cachedData,
-                        error: errorResponse.error,
-                        errorDetails: errorResponse.errorDetails
+                        data: cachedData,
+                        source: 'expired_cache'
                     };
                 }
             } catch (cacheError) {
-                console.error('Error retrieving from cache:', cacheError);
+                console.log('No cache data available');
             }
-            
-            return errorResponse;
+                
+            return {
+                success: false,
+                error: 'Could not connect to X API. Please check your internet connection and try again.'
+            };
         }
-    } catch (error) {
-        console.error(`Unexpected error in getUserData for ${username}:`, error);
+            
+        // Handle rate limit specifically
+        if (error.message.includes('rate limit') || error.status === 429) {
+            return {
+                success: false,
+                error: 'Rate limit exceeded. Please try again later.'
+            };
+        }
+            
+        // If the user doesn't exist
+        if (error.status === 404) {
+            return {
+                success: false,
+                error: `User @${username} doesn't exist on X.`
+            };
+        }
+            
+        // Check if the account is suspended
+        if (error.message.includes('suspended') || error.status === 403) {
+            return {
+                success: false,
+                error: `The account @${username} has been suspended.`
+            };
+        }
+            
+        // Fallback error handling
         return {
             success: false,
-            error: 'An unexpected error occurred',
-            errorDetails: error.message
+            error: `Error analyzing @${username}: ${error.message}`
         };
     }
 }
 
-/**
- * Process user data from Twitter API
- * @param {Object} userData - User data from API
- * @param {string} username - Username
- * @param {Object} config - API config used
- * @param {number} configNum - Config number
- * @returns {Promise<Object>} - Processed data
- */
-async function processUserData(userData, username, config, configNum) {
-    try {
-        // Fetch tweets for the user
-        console.log(`Fetching tweets for user ID ${userData.data.id}`);
-        
-        // Prepare headers
-        const headers = {
-            'Authorization': `Bearer ${config.BEARER_TOKEN}`,
-            'Content-Type': 'application/json'
-        };
-        
-        const options = {
-            method: 'GET',
-            headers
-        };
-        
-        let tweetsData = { data: [] };
-        
-        try {
-            const tweetsUrl = `${config.API_BASE_URL}/users/${userData.data.id}/tweets?max_results=10&tweet.fields=public_metrics,created_at,entities,attachments&expansions=attachments.media_keys`;
-            const cacheBuster = Date.now();
-            const tweetsUrlNoCached = `${tweetsUrl}&_nocache=${cacheBuster}`;
-            
-            const tweetsResponse = await fetch(tweetsUrlNoCached, options);
-            
-            if (tweetsResponse.ok) {
-                tweetsData = await tweetsResponse.json();
-                console.log(`Retrieved ${tweetsData.data?.length || 0} tweets for ${username}`);
-            } else {
-                console.warn(`Failed to fetch tweets for ${username}: ${tweetsResponse.status} ${tweetsResponse.statusText}`);
-                // Continue without tweets
-            }
-        } catch (tweetsError) {
-            console.warn('Failed to fetch tweets, but continuing with user data only:', tweetsError);
-        }
-        
-        // Get settings
-        const settings = await getSettings();
-        
-        // Add Grok analysis if enabled
-        let grokAnalysis = null;
-        
-        if (settings.grokEnabled) {
-            try {
-                grokAnalysis = await analyzeProfileWithGrok(
-                    userData.data, 
-                    tweetsData.data || []
-                );
-            } catch (grokError) {
-                console.error('Grok analysis failed, but continuing:', grokError);
-                // Continue without Grok analysis
-            }
-        }
-        
-        // Calculate engagement rate if we have tweets
-        let engagementRate = 0;
-        let bestPostingTimes = [];
-        let topPerformingContent = [];
-        
-        if (tweetsData.data && tweetsData.data.length > 0) {
-            engagementRate = calculateEngagementRate(tweetsData.data);
-            bestPostingTimes = calculateBestPostingTimes(tweetsData.data);
-            topPerformingContent = getTopPerformingContent(tweetsData.data);
-        }
-        
-        // Determine posting strategy
-        const strategy = analyzePostingStrategy(
-            userData.data,
-            tweetsData.data || []
-        );
-        
-        // Calculate complete analytics
-        const analytics = calculateAnalytics(tweetsData.data || []);
-        analytics.engagement_rate = engagementRate;
-        analytics.best_posting_times = bestPostingTimes;
-        analytics.top_performing_content = topPerformingContent;
-        
-        // Get rate limits
-        const rateLimits = await new Promise(resolve => {
-            chrome.storage.local.get(['rateLimits'], (data) => {
-                resolve(data.rateLimits || RATE_LIMITS);
-            });
-        });
-        
-        // Add rate limit info to response
-        const configKey = `config${configNum}`;
-        const rateLimit = {
-            used: rateLimits[configKey]?.readRequests.used || 0,
-            total: rateLimits[configKey]?.readRequests.total || 50,
-            resetDate: rateLimits[configKey]?.readRequests.resetDate || Date.now() + 2592000000,
-            configNum: configNum
-        };
-        
-        // Combined response
-        const result = {
-            success: true,
-            data: {
-                user: userData.data,
-                tweets: tweetsData.data || [],
-                analytics: analytics,
-                strategy: strategy,
-                grokAnalysis: grokAnalysis
-            },
-            rateLimit: rateLimit,
-            timestamp: Date.now(),
-            fromCache: false
-        };
-        
-        // Cache the result
-        if (settings.cacheEnabled) {
-            const cacheKey = `profile_${username.toLowerCase()}`;
-            chrome.storage.local.set({ [cacheKey]: result });
-            console.log(`Cached profile data for ${username}`);
-        }
-        
-        return result;
-    } catch (error) {
-        console.error('Error processing user data:', error);
-        throw error;
-    }
-}
-
-// Helper function to provide mock user data when needed
-function getMockUserData(username) {
-    console.log(`Generating mock data for ${username}`);
-    
-    // Create a basic user object with the username
-    const user = {
-        id: '123456789',
-        name: username.startsWith('@') ? username.substring(1) : username,
-        username: username.startsWith('@') ? username.substring(1) : username,
-        description: `This is a mock profile for ${username}. Using sample data because the API is unavailable.`,
-        public_metrics: {
-            followers_count: Math.floor(Math.random() * 5000) + 500,
-            following_count: Math.floor(Math.random() * 2000) + 200,
-            tweet_count: Math.floor(Math.random() * 15000) + 1000,
-            listed_count: Math.floor(Math.random() * 50) + 5
-        }
-    };
-    
-    // Generate mock tweets
-    const tweets = [];
-    const topics = ['tech', 'AI', 'marketing', 'social media', 'growth', 'career'];
-    
-    for (let i = 0; i < 10; i++) {
-        const topic = topics[Math.floor(Math.random() * topics.length)];
-        const likes = Math.floor(Math.random() * 100) + 5;
-        const retweets = Math.floor(Math.random() * 20) + 1;
-        const replies = Math.floor(Math.random() * 10) + 1;
-        
-        const date = new Date();
-        date.setDate(date.getDate() - i);
-        
-        tweets.push({
-            id: `mock_${i}_${Date.now()}`,
-            text: `This is a sample tweet about ${topic} for demo purposes. #${topic.replace(' ', '')} #xanalyzer`,
-            created_at: date.toISOString(),
-            public_metrics: {
-                like_count: likes,
-                retweet_count: retweets,
-                reply_count: replies,
-                quote_count: Math.floor(Math.random() * 5)
-            },
-            entities: {
-                hashtags: [
-                    { tag: topic.replace(' ', '') },
-                    { tag: 'xanalyzer' }
-                ]
-            },
-            attachments: i % 3 === 0 ? { media_keys: ['mock_media'] } : undefined
-        });
-    }
-    
-    return {
-        user,
-        tweets,
-        analytics: calculateAnalytics(tweets),
-        strategy: analyzePostingStrategy(user, tweets),
-        grokAnalysis: {
-            engagementInsights: "Mock insights: Post consistently about industry topics. Use hashtags strategically. Engage with followers.",
-            growthStrategy: "Mock strategy: Focus on quality content that provides value to your audience. Use Twitter's features like Spaces and Lists."
-        },
-        rateLimit: {
-            used: 0,
-            total: 100,
-            resetDate: new Date(Date.now() + 24 * 60 * 60 * 1000).getTime()
-        },
-        configUsed: 'mock',
-        fromCache: false,
-        isMockData: true
-    };
-}
-
-// Function to clear the profile cache
-function clearCache() {
-    profileCache.clear();
-    console.log('Cache cleared');
-    return true;
-}
-
-// Function to switch between API configurations
-function switchAPIConfig(configNum) {
-    return new Promise((resolve) => {
-        activeConfigNum = configNum === 1 ? 1 : 2;
-        chrome.storage.local.set({ activeConfigNum }, () => {
-            console.log(`Switched to API configuration #${activeConfigNum}`);
-            resolve(true);
+async function getRateLimitInfo() {
+    return new Promise(resolve => {
+        chrome.storage.local.get(['rateLimits'], (result) => {
+            resolve(result.rateLimits || RATE_LIMITS);
         });
     });
 }
 
-// Add after your existing functions in background.js (before the chrome.runtime.onMessage.addListener block)
+async function getTweets(username, count = 10) {
+    try {
+        // Define tweet fields
+        const tweetFields = [
+            'created_at',
+            'public_metrics',
+            'entities',
+            'referenced_tweets',
+            'attachments',
+            'context_annotations'
+        ].join(',');
+        
+        // Build URL for user's tweets
+        const url = `users/by/username/${username}/tweets?max_results=${count}&tweet.fields=${tweetFields}`;
+        
+        // Get tweets using auth handler
+        const response = await handleApiRequest(url);
+        
+        return response.data || [];
+    } catch (error) {
+        console.error('Error fetching tweets:', error);
+        return [];
+    }
+}
 
-async function analyzeProfileWithGrok(userData, tweets) {
-    try {
-      // Prepare the data for Grok analysis
-      const profileData = {
-        user: userData,
-        recentTweets: tweets.map(tweet => ({
-          text: tweet.text,
-          created_at: tweet.created_at,
-          public_metrics: tweet.public_metrics,
-          hasMedia: !!tweet.attachments?.media_keys?.length,
-          hasLinks: !!tweet.entities?.urls?.length
-        }))
-      };
-      
-      // Get detailed engagement analysis
-      const engagementAnalysis = await grokService.analyzeContent(
-        profileData, 
-        'engagement',
-        { detailLevel: 'standard' }
-      );
-      
-      // Get growth strategy recommendations
-      const growthAnalysis = await grokService.analyzeContent(
-        profileData, 
-        'growth',
-        { detailLevel: 'basic' }
-      );
-      
-      // Return combined analysis results
-      return {
-        success: engagementAnalysis.success && growthAnalysis.success,
-        engagementInsights: engagementAnalysis.success ? engagementAnalysis.analysis : null,
-        growthStrategy: growthAnalysis.success ? growthAnalysis.analysis : null,
-        tokenUsage: engagementAnalysis.tokenUsage?.overall || null,
-        error: engagementAnalysis.error || growthAnalysis.error
-      };
-    } catch (error) {
-      console.error('Failed to analyze with Grok:', error);
-      return {
-        success: false,
-        error: error.message
-      };
-    }
-  }
-  
-  async function compareWithSuccessfulProfile(username, successfulUsername) {
-    try {
-      // Get user data
-      const userData = await getUserData(username);
-      
-      // Get successful profile data
-      const successfulUserData = await getUserData(successfulUsername);
-      
-      // Run comparison analysis
-      const comparison = await grokService.compareContent(
-        {
-          user: userData.user,
-          recentTweets: userData.tweets
-        },
-        {
-          user: successfulUserData.user,
-          recentTweets: successfulUserData.tweets
-        }
-      );
-      
-      return {
-        success: comparison.success,
-        comparison: comparison.success ? comparison.analysis : null,
-        metrics: comparison.metrics,
-        tokenUsage: comparison.tokenUsage
-      };
-    } catch (error) {
-      console.error('Comparison failed:', error);
-      return {
-        success: false,
-        error: error.message
-      };
-    }
-  }
-  
-  // Settings management functions
-  async function getSettings() {
-    return new Promise((resolve) => {
-      chrome.storage.local.get(['xtractSettings'], (result) => {
-        if (result.xtractSettings) {
-          resolve(result.xtractSettings);
-        } else {
-          resolve(getDefaultSettings());
-        }
-      });
-    });
-  }
-  
-  function getDefaultSettings() {
-    return {
-      grokEnabled: true,
-      tokenLimit: 1000000,
-      defaultDetailLevel: 'standard',
-      cacheEnabled: true,
-      cacheDuration: 86400000 // 24 hours
+// Cache functions
+async function cacheData(key, data, expiresIn = 3600000) { // 1 hour default
+    const cacheEntry = {
+        data,
+        expires: Date.now() + expiresIn
     };
-  }
-  
-  async function saveSettings(settings) {
+    
+    return new Promise(resolve => {
+        chrome.storage.local.get(['analysisCache'], (result) => {
+            const cache = result.analysisCache || {};
+            cache[key] = cacheEntry;
+            chrome.storage.local.set({ analysisCache: cache }, resolve);
+        });
+    });
+}
+
+async function getCachedData(key, ignoreExpiry = false) {
     return new Promise((resolve, reject) => {
-      try {
-        chrome.storage.local.set({ xtractSettings: settings }, () => {
-          if (chrome.runtime.lastError) {
-            reject(new Error(chrome.runtime.lastError.message));
-          } else {
-            // Update grokService cache configuration if needed
-            if (settings.cacheEnabled !== undefined || settings.cacheDuration !== undefined) {
-              grokService.configureCaching({
-                enabled: settings.cacheEnabled,
-                maxAge: settings.cacheDuration
-              });
+        chrome.storage.local.get(['analysisCache'], (result) => {
+            const cache = result.analysisCache || {};
+            const entry = cache[key];
+            
+            if (!entry) {
+                return reject(new Error('Cache miss'));
             }
-            resolve();
-          }
+            
+            if (!ignoreExpiry && entry.expires < Date.now()) {
+                return reject(new Error('Cache expired'));
+            }
+            
+            resolve(entry.data);
         });
-      } catch (error) {
-        reject(error);
-      }
     });
-  }
-  
-  async function resetSettingsToDefault() {
-    const defaultSettings = getDefaultSettings();
-    return saveSettings(defaultSettings);
-  }
-
-/**
- * Updates the extension badge with analysis status
- * @param {string} text - Badge text
- * @param {string} backgroundColor - Badge background color
- */
-function updateBadge(text, backgroundColor = '#1DA1F2') {
-  chrome.action.setBadgeText({ text });
-  chrome.action.setBadgeBackgroundColor({ color: backgroundColor });
 }
 
-// Initialize the extension when installed
-chrome.runtime.onInstalled.addListener(function(details) {
-    console.log('Extension installed or updated:', details.reason);
-    initializeExtension();
+// Cache and configuration management functions
+function clearCache() {
+    return new Promise(resolve => {
+        chrome.storage.local.remove(['analysisCache'], () => {
+            resolve({ success: true });
+        });
+    });
+}
+
+// Listen for messages from the background script
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    console.log('Script received message:', request.action);
+    
+    if (request.action === 'analyzeProfile') {
+        handleAnalyzeProfile(request, sendResponse);
+        return true; // Keep message channel open for async response
+    }
+    
+    if (request.action === 'getUserData') {
+        getUserData(request.username)
+            .then(response => sendResponse(response))
+            .catch(error => sendResponse({ success: false, error: error.message }));
+        return true;
+    }
+    
+    if (request.action === 'clearCache') {
+        clearCache().then(sendResponse);
+        return true;
+    }
+    
+    if (request.action === 'makeAuthenticatedRequest') {
+        makeAuthenticatedRequest(request.url, request.bearerToken)
+            .then(data => sendResponse({ success: true, data }))
+            .catch(error => sendResponse({ success: false, error: error.message }));
+        return true;
+    }
+    
+    if (request.action === 'testConnection') {
+        console.log('Testing API connection');
+        handleApiRequest(request.url, request.bearerToken)
+            .then(data => {
+                sendResponse({
+                    success: true,
+                    data: data
+                });
+            })
+            .catch(error => {
+                sendResponse({
+                    success: false,
+                    error: error.toString()
+                });
+            });
+        return true; // Required for async response
+    }
 });
 
-// Also initialize on startup
-chrome.runtime.onStartup.addListener(function() {
-    console.log('Extension starting up');
-    initializeExtension();
-});
+// Helper functions for content analysis
+function detectCategories(text) {
+    const categories = [];
+    
+    // Simple category detection (replace with a more sophisticated method later)
+    if (text.match(/(tech|technology|programming|code|developer|software)/i)) {
+        categories.push('Technology');
+    }
+    
+    if (text.match(/(business|entrepreneurship|startup|marketing|sales)/i)) {
+        categories.push('Business');
+    }
+    
+    if (text.match(/(politics|government|election|democracy|policy)/i)) {
+        categories.push('Politics');
+    }
+    
+    if (text.match(/(sport|football|basketball|soccer|baseball|nfl|nba)/i)) {
+        categories.push('Sports');
+    }
+    
+    if (text.match(/(entertainment|movie|film|music|celebrity|tv|television)/i)) {
+        categories.push('Entertainment');
+    }
+    
+    // If no categories detected, add generic "General"
+    if (categories.length === 0) {
+        categories.push('General');
+    }
+    
+    return categories;
+}
+
+function generateRecommendations(engagementRate, bestPostingTimes, userData) {
+    // Basic recommendations (can be enhanced with AI later)
+    const recommendations = [];
+    
+    // Add a posting time recommendation
+    if (bestPostingTimes.length > 0) {
+        recommendations.push(`Post more frequently around ${bestPostingTimes.join(', ')} for better engagement.`);
+    }
+    
+    // Recommend based on follower count
+    const followerCount = userData.public_metrics.followers_count;
+    
+    if (followerCount < 1000) {
+        recommendations.push('Focus on consistent posting and engaging with larger accounts to grow your audience.');
+    } else if (followerCount < 10000) {
+        recommendations.push('Your audience is growing - create more shareable content to leverage your existing followers.');
+    } else {
+        recommendations.push('You have a substantial audience - consider creating unique content formats and collaborations.');
+    }
+    
+    // Add more if needed
+    if (recommendations.length < 3) {
+        recommendations.push('Engage with your audience by responding to comments and participating in conversations.');
+    }
+    
+    return recommendations;
+}
+
+// Test proxy connection to check if it's working
+async function testProxyConnection() {
+  try {
+    console.log('Testing proxy connection...');
+    
+    // Set a longer timeout for better reliability
+    const timeout = proxyConfig.timeout || 10000;
+    
+    // Create an AbortController for timeout handling
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+    
+    // First try to connect to the proxy base URL
+    const proxyBaseUrl = proxyUrl.split('/api/proxy')[0];
+    console.log(`Testing connection to proxy base URL: ${proxyBaseUrl}`);
+    
+    try {
+      // Use HEAD request first as it's faster
+      const response = await fetch(proxyBaseUrl, {
+        method: 'HEAD',
+        headers: {
+          'X-Test-Connection': 'true',
+          'Cache-Control': 'no-cache'
+        },
+        signal: controller.signal,
+        mode: 'cors'
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (response.ok || response.status === 404) {
+        // Even a 404 is fine - it means the server is reachable
+        console.log('Proxy server is reachable with status:', response.status);
+        
+        // Record successful connection in storage
+        chrome.storage.local.set({ 
+          proxyConnected: true, 
+          proxyLastChecked: Date.now(),
+          proxyError: null
+        });
+        
+        return true;
+      }
+      
+      // If we get here, server responded but with an error status
+      console.warn('Proxy connection check returned status:', response.status);
+      
+      // Store status in storage
+      chrome.storage.local.set({ 
+        proxyConnected: false, 
+        proxyLastChecked: Date.now(),
+        proxyError: `HTTP error ${response.status}`
+      });
+      
+      // If failures are non-blocking, allow the app to continue
+      return proxyConfig.fallbackToDirect !== false;
+    }
+    catch (fetchError) {
+      clearTimeout(timeoutId);
+      
+      // Specific error handling for different errors
+      let errorMessage = 'Unknown connection error';
+      
+      if (fetchError.name === 'AbortError') {
+        errorMessage = 'Connection timed out';
+      }
+      else if (fetchError.message.includes('Failed to fetch')) {
+        errorMessage = 'Network error - CORS or connectivity issue';
+      }
+      else {
+        errorMessage = fetchError.message || 'Connection failed';
+      }
+      
+      console.warn(`Proxy connection error: ${errorMessage}`);
+      
+      // Record error in storage
+      chrome.storage.local.set({ 
+        proxyConnected: false, 
+        proxyLastChecked: Date.now(),
+        proxyError: errorMessage
+      });
+      
+      // Try a secondary check to the proxy API endpoint as fallback
+      try {
+        console.log('Trying secondary proxy endpoint check...');
+        const secondaryCheck = await fetch(`${proxyUrl}?test=1`, {
+          method: 'OPTIONS',
+          headers: { 'X-Test-Only': 'true' },
+          mode: 'cors'
+        });
+        
+        if (secondaryCheck.ok || secondaryCheck.status === 204) {
+          console.log('Secondary proxy check succeeded');
+          chrome.storage.local.set({ 
+            proxyConnected: true, 
+            proxyLastChecked: Date.now(),
+            proxyError: null
+          });
+          return true;
+        }
+      }
+      catch (secondaryError) {
+        console.warn('Secondary proxy check also failed');
+      }
+      
+      // Allow continuing with direct API if proxy failures are non-blocking
+      return proxyConfig.fallbackToDirect !== false;
+    }
+  } 
+  catch (error) {
+    console.error('Proxy test error:', error);
+    
+    // Record error in storage
+    chrome.storage.local.set({ 
+      proxyConnected: false, 
+      proxyLastChecked: Date.now(),
+      proxyError: error.message || 'Unknown error'
+    });
+    
+    // Continue with direct API as fallback
+    return proxyConfig.fallbackToDirect !== false;
+  }
+}
 
 // Initialize extension configuration
 async function initializeExtension() {
-    try {
-        console.log('Initializing extension configuration...');
-        
-        // Store API configs in storage if not already present
-        chrome.storage.local.get(['apiConfig1', 'apiConfig2'], (result) => {
-            if (!result.apiConfig1) {
-                console.log('Setting up API config 1');
-                chrome.storage.local.set({ apiConfig1: API_CONFIG });
-            }
-            
-            if (!result.apiConfig2) {
-                console.log('Setting up API config 2');
-                chrome.storage.local.set({ apiConfig2: API_CONFIG2 });
-            }
-            
-            // Initialize rate limits if needed
-            chrome.storage.local.get(['rateLimits'], (data) => {
-                if (!data.rateLimits) {
-                    console.log('Setting up rate limits');
-                    chrome.storage.local.set({ rateLimits: RATE_LIMITS });
-                }
-            });
-            
-            // Set active config if not set
-            chrome.storage.local.get(['activeConfigNum'], (data) => {
-                if (!data.activeConfigNum) {
-                    console.log('Setting active config to 1');
-                    chrome.storage.local.set({ activeConfigNum: 1 });
-                }
-            });
-        });
-        
-        console.log('Initialization complete');
-    } catch (error) {
-        console.error('Error during initialization:', error);
-    }
-}
-
-// Listen for messages from content script or popup
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    console.log('Background message received:', request.action);
-    
-    if (request.action === 'analyzeProfile') {
-        console.log('Analyze profile request received for username:', request.username);
-        
-        // Debug API keys directly using the imported values
-        console.log('API Keys Debug Information:', {
-            twitterConfig1: {
-                baseUrl: API_CONFIG.API_BASE_URL || 'undefined',
-                bearerTokenExists: !!API_CONFIG.BEARER_TOKEN,
-                bearerTokenFirstChars: API_CONFIG.BEARER_TOKEN ? `${API_CONFIG.BEARER_TOKEN.substring(0, 15)}...` : 'undefined',
-                xApiKeyExists: !!API_CONFIG.X_API_KEY,
-            },
-            twitterConfig2: {
-                baseUrl: API_CONFIG2.API_BASE_URL || 'undefined',
-                bearerTokenExists: !!API_CONFIG2.BEARER_TOKEN,
-                bearerTokenFirstChars: API_CONFIG2.BEARER_TOKEN ? `${API_CONFIG2.BEARER_TOKEN.substring(0, 15)}...` : 'undefined',
-                xApiKeyExists: !!API_CONFIG2.X_API_KEY,
-            }
-        });
-        
-        // Start API request
-        getUserData(request.username)
-            .then(result => {
-                console.log('Analysis result for', request.username, ':', result);
-                
-                // If the request succeeded directly
-                if (result && result.success) {
-                    sendResponse({
-                        success: true,
-                        data: result.data,
-                        fromCache: result.fromCache,
-                        rateLimit: result.rateLimit
-                    });
-                    
-                    // Update badge to indicate successful analysis
-                    updateBadge('', '#4CAF50');
-                } else {
-                    console.warn('API request failed:', result?.error || 'Unknown error');
-                    
-                    // Get current rate limits to include in the response
-                    chrome.storage.local.get(['rateLimits'], (data) => {
-                        const limits = data.rateLimits || RATE_LIMITS;
-                        const config1 = limits.config1?.readRequests || { used: 0, total: 50 };
-                        const config2 = limits.config2?.readRequests || { used: 0, total: 50 };
-                        
-                        // Generate fallback data
-                        const fallbackData = generateFallbackData(request.username);
-                        
-                        sendResponse({
-                            success: false,
-                            error: result?.error || 'Unknown error fetching profile data',
-                            errorDetails: result?.errorDetails || 'No additional details available',
-                            // Include fallback data
-                            data: fallbackData,
-                            rateLimit: result?.rateLimit || {
-                                used: config1.used + config2.used,
-                                total: config1.total + config2.total,
-                                resetDate: Math.min(
-                                    config1.resetDate || Date.now() + 2592000000,
-                                    config2.resetDate || Date.now() + 2592000000
-                                )
-                            }
-                        });
-                    });
-                    
-                    // Update badge to indicate error
-                    updateBadge('!', '#F44336');
-                    return true; // Keep the sendResponse function valid
-                }
-            })
-            .catch(error => {
-                console.error('Error in analyzeProfile handler:', error);
-                
-                // Generate fallback data
-                const fallbackData = generateFallbackData(request.username);
-                
-                // Create a robust error response that won't crash the UI
-                sendResponse({
-                    success: false,
-                    error: error.message || 'Failed to analyze profile',
-                    data: fallbackData
-                });
-                
-                // Update badge to indicate error
-                updateBadge('!', '#F44336');
-            });
-        
-        return true; // Keep sendResponse valid for async operation
-    }
-    else if (request.action === 'clearCache') {
-        const success = clearCache();
-        sendResponse({
-            success: success
-        });
-        return false;
-    }
-    else if (request.action === 'switchAPIConfig') {
-        switchAPIConfig(request.configNum)
-            .then(success => {
-                sendResponse({
-                    success: success,
-                    configNum: request.configNum
-                });
-            });
-        return true;
-    }
-    else if (request.action === 'getRateLimits') {
-        chrome.storage.local.get(['rateLimits'], (data) => {
-            sendResponse({
-                success: true,
-                rateLimits: data.rateLimits || RATE_LIMITS
-            });
-        });
-        return true;
-    }
-    
-    // New event listeners for enhanced functionality
-    else if (request.action === 'compareProfiles') {
-        compareWithSuccessfulProfile(request.username, request.successfulUsername)
-            .then(result => {
-                sendResponse({
-                    success: true,
-                    data: result
-                });
-            })
-            .catch(error => {
-                sendResponse({
-                    success: false,
-                    error: error.message
-                });
-            });
-        return true;
-    }
-    
-    else if (request.action === 'getSettings') {
-        getSettings()
-            .then(settings => {
-                sendResponse({
-                    success: true,
-                    settings
-                });
-            })
-            .catch(error => {
-                sendResponse({
-                    success: false,
-                    error: error.message
-                });
-            });
-        return true;
-    }
-    
-    else if (request.action === 'saveSettings') {
-        saveSettings(request.settings)
-            .then(() => {
-                sendResponse({
-                    success: true
-                });
-            })
-            .catch(error => {
-                sendResponse({
-                    success: false,
-                    error: error.message
-                });
-            });
-        return true;
-    }
-    
-    else if (request.action === 'resetSettings') {
-        resetSettingsToDefault()
-            .then(() => {
-                sendResponse({
-                    success: true
-                });
-            })
-            .catch(error => {
-                sendResponse({
-                    success: false,
-                    error: error.message
-                });
-            });
-        return true;
-    }
-    
-    else if (request.action === 'getTokenStats') {
-        grokService.checkTokenAvailability(0)
-            .then(tokenInfo => {
-                sendResponse({
-                    success: true,
-                    stats: {
-                        used: tokenInfo.used,
-                        remaining: tokenInfo.remaining,
-                        limit: tokenInfo.limit,
-                        resetDate: tokenInfo.resetDate,
-                        history: tokenInfo.usageStats.usageHistory,
-                        cacheSavings: tokenInfo.usageStats.cacheSavings || 0
-                    }
-                });
-            })
-            .catch(error => {
-                sendResponse({
-                    success: false,
-                    error: error.message
-                });
-            });
-        return true;
-    }
-    
-    else if (request.action === 'clearAnalysisCache') {
-        grokService.clearAnalysisCache()
-            .then(() => {
-                sendResponse({
-                    success: true
-                });
-            })
-            .catch(error => {
-                sendResponse({
-                    success: false,
-                    error: error.message
-            });
-        });
-        return true;
-    }
-    
-    // Add handler to test API keys
-    else if (request.action === 'testApiKey') {
-        // Use an immediately invoked async function expression to handle async operations
-        (async function() {
-            try {
-                console.log('Testing Twitter API keys...');
-                
-                // Test config 1
-                const config1Result = await testTwitterApiKey(API_CONFIG, 1);
-                console.log('Config 1 test result:', config1Result);
-                
-                // Test config 2
-                const config2Result = await testTwitterApiKey(API_CONFIG2, 2);
-                console.log('Config 2 test result:', config2Result);
-                
-                // Return both results
-                sendResponse({
-                    config1Result,
-                    config2Result
-                });
-            } catch (error) {
-                console.error('Error testing API keys:', error);
-                sendResponse({
-                    success: false,
-                    error: error.message || 'Unknown error testing API keys'
-                });
-            }
-        })();
-        return true; // Keep channel open for async response
-    }
-});
-
-/**
- * Generate fallback data for a username
- * @param {string} username - The username
- * @returns {Object} - Fallback data structure
- */
-function generateFallbackData(username) {
-    // Generate random follower counts in a reasonable range
-    const followers = Math.floor(Math.random() * 10000) + 500;
-    const following = Math.floor(Math.random() * 1000) + 100;
-    const tweets = Math.floor(Math.random() * 5000) + 200;
-    const engagement = Math.floor(Math.random() * 10) + 1;
-    
-    return {
-        user: {
-            username: username,
-            name: username,
-            description: `This is fallback data for ${username}. The API request failed, so we're showing estimated data.`,
-            profile_image_url: `https://unavatar.io/twitter/${username}`,
-            public_metrics: {
-                followers_count: followers,
-                following_count: following,
-                tweet_count: tweets,
-                listed_count: Math.floor(followers / 100)
-            },
-            verified: false
-        },
-        tweets: [],
-        analytics: {
-            engagement_rate: engagement,
-            best_posting_times: [
-                { day: 'Monday', hour: '10-11 AM' },
-                { day: 'Wednesday', hour: '2-3 PM' },
-                { day: 'Friday', hour: '6-7 PM' }
-            ],
-            top_performing_content: [
-                { type: 'hashtag', value: 'technology' },
-                { type: 'hashtag', value: 'innovation' },
-                { type: 'hashtag', value: 'ai' }
-            ]
-        },
-        strategy: {
-            summary: 'Regular posting with varied content types',
-            recommendations: [
-                'Post consistently',
-                'Engage with your audience',
-                'Use hashtags strategically',
-                'Share visual content'
-            ]
-        },
-        grokAnalysis: {
-            engagementInsights: [
-                'Posts with images receive higher engagement',
-                'Questions tend to generate more replies',
-                'Weekday mornings show better performance',
-                'Content about trending topics performs well'
-            ],
-            growthStrategy: [
-                'Increase posting frequency',
-                'Engage with larger accounts in your niche',
-                'Use more compelling visuals',
-                'Create thread-style content for in-depth topics'
-            ]
-        }
-    };
-}
-
-/**
- * Test Twitter API keys directly with better error handling and CORS compliance
- * @param {Object} config - API configuration to test
- * @param {number} configNum - Config number (1 or 2)
- * @returns {Promise<Object>} - Test results
- */
-async function testTwitterApiKey(config, configNum) {
-  console.log(`Testing Twitter API key config #${configNum}`);
-  
   try {
-    // Log configuration details (safely)
-    console.log(`Config ${configNum} details:`, {
-      baseUrl: config.API_BASE_URL || 'https://api.twitter.com/2',
-      bearerTokenExists: !!config.BEARER_TOKEN,
-      bearerTokenLength: config.BEARER_TOKEN ? config.BEARER_TOKEN.length : 0,
-      bearerTokenFirstChars: config.BEARER_TOKEN ? `${config.BEARER_TOKEN.substring(0, 5)}...` : 'undefined'
+    console.log('Initializing extension configuration...');
+    
+    // Store API configs in storage if not already present
+    chrome.storage.local.get(['apiConfig1', 'apiConfig2'], (result) => {
+      if (!result.apiConfig1) {
+        console.log('Setting up API config 1');
+        chrome.storage.local.set({ apiConfig1: API_CONFIG });
+      }
+      
+      if (!result.apiConfig2) {
+        console.log('Setting up API config 2');
+        chrome.storage.local.set({ apiConfig2: API_CONFIG2 });
+      }
+      
+      // Initialize rate limits if needed
+      chrome.storage.local.get(['rateLimits'], (data) => {
+        if (!data.rateLimits) {
+          console.log('Setting up rate limits');
+          chrome.storage.local.set({ rateLimits: RATE_LIMITS });
+        }
+      });
+      
+      // Set active config if not set
+      chrome.storage.local.get(['activeConfigNum'], (data) => {
+        if (!data.activeConfigNum) {
+          console.log('Setting active config to 1');
+          chrome.storage.local.set({ activeConfigNum: 1 });
+        }
+      });
     });
     
-    // Set timeout for the entire test process
-    const testPromise = new Promise(async (resolve, reject) => {
-      try {
-        // Clean and decode the bearer token if needed
-        const bearerToken = config.BEARER_TOKEN?.trim() || '';
-        let cleanedToken = bearerToken;
+    // Register proxy service worker
+    try {
+      // Check if proxy is enabled
+      if (proxyConfig.enabled) {
+        console.log('Setting up proxy configuration...');
         
-        if (bearerToken.includes('%')) {
-          try {
-            cleanedToken = decodeURIComponent(bearerToken);
-          } catch (e) {
-            console.warn('Error decoding bearer token, using as-is', e);
+        // Store proxy config in storage for service worker access
+        await chrome.storage.local.set({ 
+          proxyConfig: {
+            enabled: proxyConfig.enabled,
+            url: proxyUrl || '',
+            timeoutMs: proxyConfig.timeout || 15000,
+            retryAttempts: proxyConfig.retryAttempts || 3
           }
-        }
-        
-        // Start with a simple endpoint that doesn't require user authorization
-        const baseUrl = config.API_BASE_URL || 'https://api.twitter.com/2';
-        const testUrl = `${baseUrl}/tweets?ids=1228393702244134912`;
-        
-        // Prepare headers - use only what's absolutely needed
-        const headers = {
-          'Authorization': `Bearer ${cleanedToken}`,
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        };
-        
-        const options = {
-          method: 'GET',
-          headers: headers,
-          // Important for CORS in browser extensions
-          credentials: 'omit',
-          mode: 'cors',
-          cache: 'no-store'
-        };
-        
-        console.log(`Sending test request to ${testUrl} with options:`, {
-          method: options.method,
-          headerKeys: Object.keys(options.headers),
-          mode: options.mode,
-          authorization: headers.Authorization ? 'Bearer ***' : 'None'
         });
         
-        // Add a cache-busting parameter
-        const cacheBuster = Date.now();
-        const urlWithNoCacheParam = testUrl.includes('?') ? 
-          `${testUrl}&_nocache=${cacheBuster}` : 
-          `${testUrl}?_nocache=${cacheBuster}`;
-        
-        // Make the request
-        const response = await fetch(urlWithNoCacheParam, options);
-        
-        // Check if the request was successful
-        if (response.ok) {
-          // Parse the JSON response
-          const data = await response.json();
-          console.log(`API key test successful for config #${configNum}:`, data);
+        // Register the proxy service worker if possible
+        try {
+          // Get the chrome runtime URL for the proxy service worker
+          const proxyServiceWorkerUrl = chrome.runtime.getURL('proxy-service-worker.js');
+          console.log('Proxy service worker URL:', proxyServiceWorkerUrl);
           
-          resolve({
-            success: true,
-            data: {
-              id: data.data?.[0]?.id || 'unknown',
-              text: data.data?.[0]?.text?.substring(0, 20) + '...' || 'Data received'
-            },
-            configNum: configNum
-          });
-        } else {
-          // Parse the error response
-          let errorText = 'Unknown error';
-          try {
-            errorText = await response.text();
-          } catch (e) {
-            console.error('Could not read error response text');
-          }
-          
-          // Log the error
-          console.error(`API key test failed for config #${configNum}:`, {
-            status: response.status,
-            statusText: response.statusText,
-            errorText: errorText?.substring(0, 100) // Limit error text length
-          });
-          
-          // If we get a 401 or 403, the token is likely invalid
-          if (response.status === 401 || response.status === 403) {
-            resolve({
-              success: false,
-              error: `API key authentication failed: ${response.status} ${response.statusText}`,
-              errorDetails: `Your API key may be invalid or expired. Please check your credentials.`,
-              configNum: configNum
+          // Check if the service worker API is available
+          if ('serviceWorker' in navigator) {
+            // Attempt to register the proxy service worker
+            navigator.serviceWorker.register(proxyServiceWorkerUrl, {
+              scope: '/'
+            }).then(registration => {
+              console.log('Proxy service worker registered:', registration.scope);
+              chrome.storage.local.set({ proxyServiceWorkerRegistered: true });
+            }).catch(error => {
+              console.error('Proxy service worker registration failed:', error);
+              chrome.storage.local.set({ 
+                proxyServiceWorkerRegistered: false,
+                proxyServiceWorkerError: error.message
+              });
             });
           } else {
-            // For other errors, return a generic message
-            resolve({
-              success: false,
-              error: `API request failed: ${response.status} ${response.statusText}`,
-              errorDetails: errorText?.substring(0, 200) || 'No detailed error information available',
-              configNum: configNum
+            console.warn('Service Worker API not available in this context');
+            chrome.storage.local.set({ 
+              proxyServiceWorkerRegistered: false,
+              proxyServiceWorkerError: 'Service Worker API not available'
             });
           }
+        } catch (swError) {
+          console.error('Error registering proxy service worker:', swError);
+          chrome.storage.local.set({ 
+            proxyServiceWorkerRegistered: false,
+            proxyServiceWorkerError: swError.message
+          });
         }
-      } catch (error) {
-        // Handle any errors that occur during the fetch
-        console.error(`API key test error for config #${configNum}:`, error);
         
-        // Check for network errors
-        if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
-          resolve({
-            success: false,
-            error: 'Network error: Failed to connect to Twitter API',
-            errorDetails: 'This may be due to network connectivity issues or CORS restrictions. Try refreshing the extension.',
-            configNum: configNum
-          });
-        } else {
-          // For other errors
-          resolve({
-            success: false,
-            error: error.message || 'Unknown error',
-            errorDetails: error.stack ? error.stack.substring(0, 200) : 'No error details available',
-            configNum: configNum
+        // Test proxy connection but don't wait for it - just log the result
+        testProxyConnection().then(isConnected => {
+          console.log(`Proxy connection test result: ${isConnected ? 'Connected' : 'Failed'}`);
+          
+          // Store connection status in storage
+          chrome.storage.local.set({ proxyConnected: isConnected });
+          
+          // Preload the icons after proxy check
+          try {
+            if (iconManager && typeof iconManager.setIconState === 'function') {
+              iconManager.setIconState('default').catch(err => {
+                console.warn('Unable to set initial icon state:', err);
+              });
+            }
+          } catch (iconError) {
+            console.warn('Icon manager error during initialization:', iconError);
+          }
+        });
+      } else {
+        console.log('Proxy is disabled, using direct API connections');
+        
+        // Still preload icons
+        try {
+          if (iconManager && typeof iconManager.setIconState === 'function') {
+            iconManager.setIconState('default').catch(err => {
+              console.warn('Unable to set initial icon state:', err);
+            });
+          }
+        } catch (iconError) {
+          console.warn('Icon manager error during initialization:', iconError);
+        }
+      }
+    } catch (proxyError) {
+      console.error('Error setting up proxy:', proxyError);
+      
+      // Still continue with initialization
+      try {
+        if (iconManager && typeof iconManager.setIconState === 'function') {
+          iconManager.setIconState('default').catch(err => {
+            console.warn('Unable to set initial icon state:', err);
           });
         }
+      } catch (iconError) {
+        console.warn('Icon manager error during initialization:', iconError);
+      }
+    }
+    
+    console.log('Initialization complete');
+  } catch (error) {
+    console.error('Error during initialization:', error);
+  }
+}
+
+// Handle profile analysis request
+async function handleAnalyzeProfile(request, sendResponse) {
+  try {
+    console.log('Analyzing profile for:', request.username);
+    
+    // Validate username
+    if (!request.username) {
+      throw new Error('Invalid username provided');
+    }
+    
+    // Clean username
+    const username = request.username.replace('@', '');
+    
+    // Set icon to loading state safely
+    try {
+      // Only update icon if in a suitable environment
+      await iconManager.setIconState('loading');
+    } catch (iconError) {
+      console.warn('Unable to update icon state:', iconError);
+      // Continue with the analysis - don't fail because of icon issues
+    }
+    
+    // Try to get cached data first
+    let cachedData = null;
+    try {
+      cachedData = await getCachedData(username);
+      
+      if (cachedData) {
+        console.log('Using cached data for profile analysis');
+        sendResponse({
+          success: true,
+          data: cachedData,
+          fromCache: true
+        });
+        
+        // Set icon to active state
+        try {
+          await iconManager.setIconState('active');
+        } catch (iconError) {
+          console.warn('Unable to update icon state:', iconError);
+        }
+        
+        return;
+      }
+    } catch (cacheError) {
+      console.log('No valid cache found, proceeding with API request');
+    }
+    
+    // Make API request through proxy
+    const response = await makeAuthenticatedRequest(`users/by/username/${username}`, {
+      method: 'GET',
+      params: {
+        'user.fields': 'created_at,description,entities,id,location,name,profile_image_url,protected,public_metrics,url,username,verified,verified_type'
       }
     });
     
-    // Set a timeout for the entire process
-    const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('API request timed out after 10 seconds')), 10000);
+    if (!response.success && !response.data) {
+      throw new Error(response.error || 'Failed to fetch user data');
+    }
+    
+    // Get user tweets
+    let userData = response.data;
+    let tweets = [];
+    
+    if (userData && userData.data && userData.data.id) {
+      try {
+        const tweetsResponse = await makeAuthenticatedRequest(`users/${userData.data.id}/tweets`, {
+          method: 'GET',
+          params: {
+            'max_results': 10,
+            'tweet.fields': 'created_at,public_metrics,entities,context_annotations',
+            'exclude': 'retweets,replies'
+          }
+        });
+        
+        if (tweetsResponse.success && tweetsResponse.data) {
+          tweets = tweetsResponse.data.data || [];
+        }
+      } catch (tweetError) {
+        console.error('Error fetching tweets:', tweetError);
+        // Continue even if tweets fail
+      }
+    }
+    
+    // Ensure public_metrics exists (defensive coding)
+    if (userData && userData.data) {
+      if (!userData.data.public_metrics) {
+        userData.data.public_metrics = {
+          followers_count: userData.data.followers_count || 0,
+          following_count: userData.data.following_count || 0,
+          tweet_count: userData.data.statuses_count || userData.data.tweet_count || 0,
+          listed_count: userData.data.listed_count || 0
+        };
+      }
+    }
+    
+    // Process the data - create a more user-friendly result object
+    const user = userData.data;
+    
+    // Only proceed if we have valid user data
+    if (!user) {
+      throw new Error('Invalid user data received from API');
+    }
+    
+    // Calculate metrics - with defensive coding to handle potential missing fields
+    const followersCount = user.public_metrics?.followers_count || 0;
+    const followingCount = user.public_metrics?.following_count || 0;
+    const tweetCount = user.public_metrics?.tweet_count || 0;
+    
+    const followerRatio = followingCount > 0 
+      ? (followersCount / followingCount).toFixed(2) 
+      : 'N/A';
+    
+    // Calculate account age
+    const createdDate = new Date(user.created_at || Date.now());
+    const now = new Date();
+    const accountAgeMs = now - createdDate;
+    const accountAgeDays = Math.floor(accountAgeMs / (1000 * 60 * 60 * 24)) || 1; // Prevent division by zero
+    
+    // Calculate tweets per day
+    const tweetsPerDay = accountAgeDays > 0 
+      ? (tweetCount / accountAgeDays).toFixed(2) 
+      : tweetCount;
+    
+    // Create the analysis result with enhanced format
+    const analysisResult = {
+      username: user.username,
+      displayName: user.name,
+      profileImageUrl: user.profile_image_url,
+      description: user.description,
+      verified: user.verified || false,
+      verifiedType: user.verified_type || 'none',
+      accountStats: {
+        followersCount,
+        followingCount,
+        tweetCount,
+        followerRatio,
+        accountAgeDays,
+        accountCreated: createdDate.toDateString(),
+        tweetsPerDay,
+        isProtected: user.protected || false
+      },
+      location: user.location || 'Not specified',
+      url: user.url,
+      rawUserData: user,
+      recentTweets: tweets
+    };
+    
+    // Add posting strategy insights if tweets are available
+    if (tweets && tweets.length > 0) {
+      try {
+        analysisResult.postingStrategy = analyzePostingStrategy(user, tweets);
+      } catch (strategyError) {
+        console.error('Error analyzing posting strategy:', strategyError);
+        // Continue without posting strategy
+      }
+    }
+    
+    // Cache the successful response
+    try {
+      await cacheData(username, analysisResult);
+    } catch (cacheError) {
+      console.warn('Failed to cache analysis result:', cacheError);
+    }
+    
+    // Send response back to popup
+    sendResponse({
+      success: true,
+      data: analysisResult,
+      fromCache: false
     });
     
-    // Race the test against the timeout
-    return await Promise.race([testPromise, timeoutPromise]);
+    // Update icon to success state
+    try {
+      await iconManager.setIconState('active');
+    } catch (iconError) {
+      console.warn('Unable to update icon state:', iconError);
+    }
     
   } catch (error) {
-    // Catch any uncaught errors
-    console.error(`Uncaught error in testTwitterApiKey for config #${configNum}:`, error);
-    return {
+    console.error('Error in handleAnalyzeProfile:', error);
+    
+    // Try to use cached data even if it's expired
+    try {
+      const expiredCache = await getCachedData(request.username, true);
+      if (expiredCache) {
+        sendResponse({
+          success: true,
+          data: expiredCache,
+          fromCache: true,
+          cacheExpired: true,
+          warning: 'Using expired cached data due to API error'
+        });
+        
+        // Set icon to a warning state
+        try {
+          await iconManager.setIconState('error');
+          setTimeout(() => {
+            iconManager.setIconState('default').catch(err => console.warn('Error setting default icon:', err));
+          }, 2000);
+        } catch (iconError) {
+          console.warn('Unable to update icon state:', iconError);
+        }
+        
+        return;
+      }
+    } catch (cacheError) {
+      console.log('No expired cache available');
+    }
+    
+    // Set icon to error state
+    try {
+      await iconManager.setIconState('error');
+    } catch (iconError) {
+      console.warn('Unable to update icon state:', iconError);
+    }
+    
+    // Send error response
+    sendResponse({
       success: false,
-      error: 'An unexpected error occurred while testing the API',
-      errorDetails: error.message || 'No error details available',
-      configNum: configNum
-    };
+      error: error.message || 'An unknown error occurred',
+      errorDetail: error.toString()
+    });
   }
 }

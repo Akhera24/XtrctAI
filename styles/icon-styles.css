@@ -151,12 +151,17 @@
   --x-active: #1DA1F2;
   --x-disabled: #657786;
   --x-hover: rgba(29, 161, 242, 0.1);
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+[data-theme="dark"] .x-logo {
+  --x-primary: #ffffff;
 }
 
 .x-logo-default {
   fill: var(--x-primary);
-  stroke: var(--x-primary);
-  stroke-width: 2;
 }
 
 .x-logo-active {

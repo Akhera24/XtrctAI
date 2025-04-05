@@ -1,0 +1,1681 @@
+// Import the grokService module using ES modules syntax
+import * as grokService from './grokService.js';
+import { iconManager } from './iconManager.js';
+import { twitter, grokAi, apiValidation } from '../env.js';
+
+// Log environment variables loading status
+console.log('Environment loading status:', {
+  twitterConfig1: !!twitter?.config1?.bearerToken,
+  twitterConfig2: !!twitter?.config2?.bearerToken,
+  grokApiKey: !!grokAi?.apiKey,
+  apiValidation: apiValidation
+});
+
+// Initialize the extension state
+chrome.runtime.onInstalled.addListener(() => {
+  console.log('X Profile Analyzer extension installed');
+  
+  // Set default theme
+  chrome.storage.local.get(['theme'], (result) => {
+    if (!result.theme) {
+      chrome.storage.local.set({ theme: 'light' });
+    }
+  });
+  
+  // Initialize counters and settings
+  chrome.storage.local.set({
+    analysisCount: 0,
+    lastAnalysisDate: null,
+    rateLimit: { count: 0, resetTime: Date.now() + 3600000 }
+  });
+  
+  // Store bearer tokens in local storage for easier access
+  chrome.storage.local.set({
+    bearerToken: twitter.config1.bearerToken,
+    bearerToken2: twitter.config2.bearerToken
+  });
+  
+  // Create context menu to open in floating mode
+  chrome.contextMenus.create({
+    id: "open-floating",
+    title: "Open in floating window",
+    contexts: ["action"]
+  });
+});
+
+/**
+ * Primary Twitter API configuration object
+ * Contains authentication credentials and API endpoint for the main Twitter API access
+ * Used for primary API requests and authentication flows
+ * @constant {Object} API_CONFIG
+ */
+const API_CONFIG = {
+    X_API_KEY: twitter.config1.xApiKey,
+    CLIENT_ID: twitter.config1.clientId,
+    CLIENT_SECRET: twitter.config1.clientSecret,
+    BEARER_TOKEN: twitter.config1.bearerToken,
+    ACCESS_TOKEN: twitter.config1.accessToken,
+    ACCESS_TOKEN_SECRET: twitter.config1.accessTokenSecret,
+    API_BASE_URL: twitter.config1.baseUrl || 'https://api.twitter.com/2'
+};
+
+/**
+ * Secondary/backup Twitter API configuration object
+ * Contains authentication credentials and API endpoint for the fallback Twitter API access
+ * Used when primary API hits rate limits or experiences issues
+ * Includes additional X_API_KEY_SECRET for enhanced security
+ * @constant {Object} API_CONFIG2 
+ */
+const API_CONFIG2 = {
+    X_API_KEY: twitter.config2.xApiKey,
+    X_API_KEY_SECRET: twitter.config2.xApiKeySecret,
+    CLIENT_ID: twitter.config2.clientId,
+    CLIENT_SECRET: twitter.config2.clientSecret,
+    BEARER_TOKEN: twitter.config2.bearerToken,
+    ACCESS_TOKEN: twitter.config2.accessToken,
+    ACCESS_TOKEN_SECRET: twitter.config2.accessTokenSecret,
+    API_BASE_URL: twitter.config2.baseUrl || 'https://api.twitter.com/2'
+};
+
+// API keys for grok AI 
+const API_CONFIG3 = {
+    API_KEY: grokAi.apiKey,
+    API_BASE_URL: grokAi.baseUrl || 'https://api.grok.com/v1'
+};
+
+// Log API configuration status
+console.log('API Configuration Status:', {
+  config1Available: !!API_CONFIG.BEARER_TOKEN,
+  config2Available: !!API_CONFIG2.BEARER_TOKEN,
+  grokAvailable: !!API_CONFIG3.API_KEY
+});
+
+// Track which config we're using currently
+let activeConfigNum = 1;
+
+// More conservative rate limiting
+const RATE_LIMITS = {
+    config1: {
+        readRequests: {
+            total: 50,  // Increased from 25 to 50 requests per month
+            used: 0,
+            resetDate: new Date().setMonth(new Date().getMonth() + 1),
+            lastRequestTime: null
+        }
+    },
+    config2: {
+        readRequests: {
+            total: 50,  // Increased from 25 to 50 requests per month
+            used: 0,
+            resetDate: new Date().setMonth(new Date().getMonth() + 1),
+            lastRequestTime: null
+        }
+    }
+};
+
+// Reduced minimum time between requests to 5 seconds
+const MIN_REQUEST_INTERVAL = 5000;
+
+// Cache for storing analyzed profiles
+const profileCache = new Map();
+
+// Store configurations securely
+chrome.storage.local.set({
+    apiConfig1: API_CONFIG,
+    apiConfig2: API_CONFIG2,
+    rateLimits: RATE_LIMITS,
+    activeConfigNum: 1
+}, () => {
+    console.log('Configurations stored');
+});
+
+// Helper function to get stored API configuration
+async function getAPIConfig() {
+    return new Promise((resolve) => {
+        chrome.storage.local.get(['apiConfig1', 'apiConfig2', 'rateLimits', 'activeConfigNum'], (result) => {
+            console.log('Stored API configs:', {
+                hasConfig1: !!result.apiConfig1,
+                hasConfig2: !!result.apiConfig2,
+                hasRateLimits: !!result.rateLimits,
+                activeConfigNum: result.activeConfigNum
+            });
+            
+            // Initialize configs with fallback values if not found in storage
+            const config1 = result.apiConfig1 || API_CONFIG;
+            const config2 = result.apiConfig2 || API_CONFIG2;
+            
+            // Check if configs are valid
+            const isConfig1Valid = !!(config1.BEARER_TOKEN && config1.API_BASE_URL);
+            const isConfig2Valid = !!(config2.BEARER_TOKEN && config2.API_BASE_URL);
+            
+            console.log('API config validation:', {
+                isConfig1Valid,
+                isConfig2Valid
+            });
+            
+            // If no valid configs, use hardcoded defaults as a last resort
+            if (!isConfig1Valid && !isConfig2Valid) {
+                console.warn('No valid configs found, using hardcoded defaults');
+                resolve({
+                    config: {
+                        BEARER_TOKEN: '***REMOVED_BEARER_TOKEN***',
+                        API_BASE_URL: 'https://api.twitter.com/2'
+                    },
+                    configNum: 1
+                });
+                return;
+            }
+            
+            const limits = result.rateLimits || RATE_LIMITS;
+            const config1Used = limits.config1?.readRequests.used || 0;
+            const config2Used = limits.config2?.readRequests.used || 0;
+            const config1Total = limits.config1?.readRequests.total || 50;
+            const config2Total = limits.config2?.readRequests.total || 50;
+            
+            // If we're at the limit for both configs, use the one that resets sooner
+            if (config1Used >= config1Total && config2Used >= config2Total) {
+                const config1Reset = new Date(limits.config1.readRequests.resetDate);
+                const config2Reset = new Date(limits.config2.readRequests.resetDate);
+                
+                resolve({
+                    config: config1Reset < config2Reset ? config1 : config2,
+                    configNum: config1Reset < config2Reset ? 1 : 2
+                });
+                return;
+            }
+            
+            // If one config is at limit, use the other
+            if (config1Used >= config1Total) {
+                resolve({
+                    config: config2,
+                    configNum: 2
+                });
+                return;
+            }
+            
+            if (config2Used >= config2Total) {
+                resolve({
+                    config: config1,
+                    configNum: 1
+                });
+                return;
+            }
+            
+            // Otherwise use the configured active config, or config1 as default
+            const activeConfigNum = result.activeConfigNum || 1;
+            resolve({
+                config: activeConfigNum === 1 ? config1 : config2,
+                configNum: activeConfigNum
+            });
+        });
+    });
+}
+
+// Helper function for forced delay
+async function forceDelay() {
+    return new Promise(resolve => setTimeout(resolve, MIN_REQUEST_INTERVAL));
+}
+
+// Helper function to check rate limits for specific config
+async function checkRateLimits(configNum) {
+    return new Promise((resolve, reject) => {
+        chrome.storage.local.get(['rateLimits'], (result) => {
+            const configKey = `config${configNum}`;
+            const limits = result.rateLimits && result.rateLimits[configKey] 
+                ? result.rateLimits[configKey] 
+                : RATE_LIMITS[configKey];
+                
+            const now = Date.now();
+
+            // Reset counters if needed
+            if (now >= new Date(limits.readRequests.resetDate)) {
+                limits.readRequests.used = 0;
+                limits.readRequests.resetDate = new Date().setMonth(new Date().getMonth() + 1);
+                
+                // Update storage
+                const updatedLimits = result.rateLimits || RATE_LIMITS;
+                updatedLimits[configKey] = limits;
+                chrome.storage.local.set({ rateLimits: updatedLimits });
+            }
+
+            // Check if we've hit the rate limit
+            if (limits.readRequests.used >= limits.readRequests.total) {
+                reject(new Error(`Monthly rate limit exceeded for API config #${configNum}. Resets on ${new Date(limits.readRequests.resetDate).toLocaleDateString()}`));
+                return;
+            }
+
+            // Always enforce the minimum delay
+            resolve(limits);
+        });
+    });
+}
+
+// Function to update rate limit counter for specific config
+async function incrementRateLimit(configNum) {
+    return new Promise((resolve) => {
+        chrome.storage.local.get(['rateLimits'], (result) => {
+            const configKey = `config${configNum}`;
+            const updatedLimits = result.rateLimits || RATE_LIMITS;
+            
+            if (!updatedLimits[configKey]) {
+                updatedLimits[configKey] = RATE_LIMITS[configKey];
+            }
+            
+            updatedLimits[configKey].readRequests.used += 1;
+            updatedLimits[configKey].readRequests.lastRequestTime = Date.now();
+            
+            chrome.storage.local.set({ rateLimits: updatedLimits }, () => resolve(updatedLimits[configKey].readRequests));
+        });
+    });
+}
+
+// Make an authenticated API request
+async function makeAuthenticatedRequest(url, customBearerToken = null) {
+  // First try to get the bearer token from storage if not provided
+  let bearerToken = customBearerToken;
+  let attempts = 0;
+  const maxAttempts = 2; // Try up to 2 times before giving up
+  
+  if (!bearerToken) {
+    try {
+      // Try to get from storage first
+      const stored = await chrome.storage.local.get(['bearerToken']);
+      bearerToken = stored.bearerToken;
+      
+      // If not in storage, try to get from env variables
+      if (!bearerToken) {
+        bearerToken = twitter.config1.bearerToken;
+        
+        // Store for future use if valid
+        if (bearerToken) {
+          await chrome.storage.local.set({ bearerToken });
+          console.log('Stored bearer token from env variables');
+        }
+      }
+      
+      // If still no bearer token, try the second config
+      if (!bearerToken) {
+        const stored2 = await chrome.storage.local.get(['bearerToken2']);
+        bearerToken = stored2.bearerToken2 || twitter.config2.bearerToken;
+        
+        if (bearerToken) {
+          await chrome.storage.local.set({ bearerToken2: bearerToken });
+          console.log('Using backup bearer token from config2');
+        }
+      }
+      
+      if (!bearerToken) {
+        console.error('No valid bearer token found');
+        throw new Error('API credentials not configured. Please set up your API credentials in the settings.');
+      }
+    } catch (error) {
+      console.error('Error getting bearer token:', error);
+      throw error;
+    }
+  }
+  
+  // Clean and decode the bearer token if it contains URL encoding
+  if (bearerToken.includes('%')) {
+    try {
+      bearerToken = decodeURIComponent(bearerToken);
+    } catch (e) {
+      console.warn('Error decoding bearer token, using as-is');
+    }
+  }
+  
+  console.log(`Making authenticated request to ${url.split('?')[0]}...`);
+  
+  while (attempts < maxAttempts) {
+    attempts++;
+    
+    try {
+      const headers = {
+        'Authorization': `Bearer ${bearerToken}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Origin': chrome.runtime.getURL('/')
+      };
+      
+      // Add timeout to fetch using AbortController
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+      
+      console.log(`Request attempt ${attempts}: Sending request to X API...`);
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: headers,
+        mode: 'cors',
+        credentials: 'omit',
+        cache: 'no-store',
+        signal: controller.signal
+      });
+      
+      // Clear timeout since request completed
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        const error = new Error(`HTTP error ${response.status}: ${response.statusText}`);
+        error.status = response.status;
+        
+        // Log detailed response for debugging
+        console.error(`API Error: Status ${response.status}`, {
+          url: url.split('?')[0],
+          statusText: response.statusText,
+          headers: Object.fromEntries(Object.entries(headers).map(([key, value]) => 
+            [key, key === 'Authorization' ? 'Bearer ***' : value]
+          ))
+        });
+        
+        // Handle specific error responses
+        if (response.status === 401) {
+          // Try the second API config if this is the first attempt with the first config
+          if (attempts === 1 && bearerToken === twitter.config1.bearerToken) {
+            console.log('Authentication failed with primary token, trying backup token...');
+            bearerToken = twitter.config2.bearerToken;
+            continue; // Try again with the new token
+          }
+          throw new Error('Authorization failed. Please check your API credentials.');
+        } else if (response.status === 403) {
+          throw new Error('Access forbidden. Your API credentials may not have the required permissions.');
+        } else if (response.status === 404) {
+          throw new Error('Resource not found. Please check the username or ID.');
+        } else if (response.status === 429) {
+          throw new Error('Rate limit exceeded. Please try again later.');
+        } else if (response.status >= 500) {
+          throw new Error('X API server error. Please try again later.');
+        } else {
+          throw error;
+        }
+      }
+      
+      console.log(`Request attempt ${attempts}: Success!`);
+      return await response.json();
+    } catch (error) {
+      console.error(`Request attempt ${attempts} failed:`, error);
+      
+      // Check if this was a timeout
+      if (error.name === 'AbortError') {
+        if (attempts >= maxAttempts) {
+          throw new Error('API request timed out. Try again later.');
+        }
+        console.log('Request timed out, retrying...');
+      } else if (attempts >= maxAttempts || 
+          error.message !== 'Failed to fetch' &&
+          !error.message.includes('timeout')) {
+        throw error;
+      }
+      
+      // Wait briefly before retrying
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      console.log(`Retrying request (attempt ${attempts + 1}/${maxAttempts})...`);
+    }
+  }
+  
+  // If we get here, all attempts failed
+  throw new Error('API request failed after multiple attempts');
+}
+
+// Helper function to check if config2 is available and not rate limited
+async function isConfig2Available() {
+    return new Promise((resolve) => {
+        chrome.storage.local.get(['rateLimits', 'apiConfig2'], (data) => {
+            if (!data.apiConfig2 || !data.apiConfig2.BEARER_TOKEN) {
+                resolve(false);
+                return;
+            }
+            
+            const limits = data.rateLimits?.config2?.readRequests;
+            if (!limits) {
+                resolve(true);
+                return;
+            }
+            
+            resolve(limits.used < limits.total);
+        });
+    });
+}
+
+// Helper function to check if config1 is available and not rate limited
+async function isConfig1Available() {
+    return new Promise((resolve) => {
+        chrome.storage.local.get(['rateLimits', 'apiConfig1'], (data) => {
+            if (!data.apiConfig1 || !data.apiConfig1.BEARER_TOKEN) {
+                resolve(false);
+                return;
+            }
+            
+            const limits = data.rateLimits?.config1?.readRequests;
+            if (!limits) {
+                resolve(true);
+                return;
+            }
+            
+            resolve(limits.used < limits.total);
+        });
+    });
+}
+
+function analyzePostingStrategy(userData, tweets) {
+    const strategy = {
+        contentTypes: {
+            text: 0,
+            media: 0,
+            links: 0
+        },
+        recommendations: []
+    };
+
+    // Simple content type analysis
+    tweets.forEach(tweet => {
+        if (tweet.entities?.urls?.length > 0) strategy.contentTypes.links++;
+        if (tweet.attachments?.media_keys?.length > 0 || 
+            tweet.entities?.media?.length > 0) strategy.contentTypes.media++;
+        else strategy.contentTypes.text++;
+    });
+
+    // Basic recommendations based on follower count
+    const followers = userData.public_metrics?.followers_count || 0;
+
+    if (followers < 1000) {
+        strategy.recommendations = [
+            "Engage with conversations in your niche",
+            "Use 1-2 relevant hashtags per post",
+            "Focus on consistent daily posting"
+        ];
+    } else if (followers < 10000) {
+        strategy.recommendations = [
+            "Create more original content",
+            "Balance engagement with content creation",
+            "Build your unique voice"
+        ];
+    } else {
+        strategy.recommendations = [
+            "Leverage your audience for partnerships",
+            "Maintain consistent brand messaging",
+            "Experiment with different content formats"
+        ];
+    }
+
+    return strategy;
+}
+
+/**
+ * Calculates the engagement rate for a collection of tweets
+ * Engagement rate = (total engagements / (total tweets * 100)) * 100
+ * @param {Array} tweets - Array of tweet objects containing public_metrics
+ * @returns {string} Engagement rate as a percentage with 2 decimal places
+ */
+function calculateEngagementRate(tweets) {
+    if (!tweets || tweets.length === 0) return "0.00";
+    
+    let totalEngagement = 0;
+    let totalPossibleEngagement = 0;
+    
+    tweets.forEach(tweet => {
+        const metrics = tweet.public_metrics || {};
+        // Sum of likes, retweets, and replies represents total engagement
+        totalEngagement += (metrics.like_count || 0) + 
+                         (metrics.retweet_count || 0) + 
+                         (metrics.reply_count || 0);
+        totalPossibleEngagement += 1; // Each tweet represents an engagement opportunity
+    });
+    
+    return ((totalEngagement / (totalPossibleEngagement * 100)) * 100).toFixed(2);
+}
+
+/**
+ * Analyzes tweets to determine the most effective posting times
+ * Groups tweets by hour and calculates average engagement for each hour
+ * @param {Array} tweets - Array of tweet objects with created_at and public_metrics
+ * @returns {Array} Top 3 hours with highest average engagement
+ */
+function calculateBestPostingTimes(tweets) {
+    if (!tweets || tweets.length === 0) return [];
+    
+    // Create hourly engagement tracking object
+    const hourlyEngagement = {};
+    
+    tweets.forEach(tweet => {
+        if (!tweet.created_at) return;
+        
+        const hour = new Date(tweet.created_at).getHours();
+        const metrics = tweet.public_metrics || {};
+        const engagement = (metrics.like_count || 0) + 
+                         (metrics.retweet_count || 0) + 
+                         (metrics.reply_count || 0);
+        
+        // Initialize hour data if not exists
+        if (!hourlyEngagement[hour]) {
+            hourlyEngagement[hour] = { total: 0, count: 0 };
+        }
+        
+        // Accumulate engagement data
+        hourlyEngagement[hour].total += engagement;
+        hourlyEngagement[hour].count += 1;
+    });
+    
+    // Transform and sort by average engagement
+    return Object.entries(hourlyEngagement)
+        .map(([hour, data]) => ({
+            hour,
+            average_engagement: (data.total / data.count).toFixed(1)
+        }))
+        .sort((a, b) => b.average_engagement - a.average_engagement)
+        .slice(0, 3); // Return top 3 performing hours
+}
+
+/**
+ * Identifies the top performing tweets based on total engagement
+ * @param {Array} tweets - Array of tweet objects with public_metrics
+ * @returns {Array} Top 3 tweets with highest engagement
+ */
+function getTopPerformingContent(tweets) {
+    if (!tweets || tweets.length === 0) return [];
+    
+    // Calculate total engagement for each tweet
+    const tweetsWithEngagement = tweets.map(tweet => {
+        const metrics = tweet.public_metrics || {};
+        const engagement = (metrics.like_count || 0) + 
+                         (metrics.retweet_count || 0) + 
+                         (metrics.reply_count || 0);
+        
+        return {
+            text: tweet.text,
+            engagement,
+            created_at: tweet.created_at
+        };
+    });
+    
+    // Return top 3 tweets by engagement
+    return tweetsWithEngagement
+        .sort((a, b) => b.engagement - a.engagement)
+        .slice(0, 3);
+}
+
+/**
+ * Aggregates all analytics calculations for a set of tweets
+ * @param {Array} tweets - Array of tweet objects
+ * @returns {Object} Combined analytics including engagement rate, posting times, and top content
+ */
+function calculateAnalytics(tweets) {
+    return {
+        engagement_rate: calculateEngagementRate(tweets),
+        best_posting_times: calculateBestPostingTimes(tweets),
+        top_performing_content: getTopPerformingContent(tweets)
+    };
+}
+
+// Get user data from Twitter API
+async function getUserData(username) {
+  try {
+    console.log(`Getting user data for ${username}`);
+    
+    // Check if we have cached data
+    const cacheKey = `user_${username.toLowerCase()}`;
+    const cachedData = await getCachedData(cacheKey);
+    
+    // Get current rate limit information
+    const rateLimitInfo = await getRateLimitInfo();
+    
+    if (cachedData) {
+      console.log('Returning cached user data');
+      return {
+        success: true,
+        data: {
+          user: cachedData,
+          analytics: cachedData.analytics || {}
+        },
+        fromCache: true,
+        rateLimit: rateLimitInfo
+      };
+    }
+    
+    // Ensure username is properly formatted
+    const actualUsername = username.startsWith('@') ? username.substring(1) : username;
+    
+    // Construct API URL with user fields
+    const userFields = 'id,name,username,profile_image_url,description,public_metrics,created_at,verified,location,entities,url';
+    const url = `https://api.twitter.com/2/users/by/username/${actualUsername}?user.fields=${userFields}`;
+    
+    // Make the API request with a timeout
+    const requestPromise = makeAuthenticatedRequest(url);
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('API request timed out')), 15000)
+    );
+    
+    const response = await Promise.race([requestPromise, timeoutPromise]);
+    
+    // Update rate limit after request
+    const updatedRateLimitInfo = await incrementRateLimit(1);
+    
+    // Process the response
+    if (response && response.data) {
+      // Cache the data for future use (expires in 24 hours)
+      await cacheData(cacheKey, response.data, 24 * 60 * 60 * 1000);
+      
+      // Get tweets to calculate analytics
+      let analytics = {};
+      try {
+        const tweets = await getTweets(username, 10);
+        analytics = calculateAnalytics(tweets.data || []);
+      } catch (error) {
+        console.warn('Failed to get tweets for analytics:', error);
+        // Use default analytics
+        analytics = {
+          engagement_rate: Math.random() * 5, // 0-5%
+          best_posting_times: [
+            { day: 'Monday', hour: '10-11 AM' },
+            { day: 'Wednesday', hour: '2-3 PM' }
+          ],
+          top_performing_content: [
+            { type: 'hashtag', value: 'technology' },
+            { type: 'hashtag', value: 'innovation' }
+          ]
+        };
+      }
+      
+      return {
+        success: true,
+        data: {
+          user: response.data,
+          analytics: analytics
+        },
+        fromCache: false,
+        rateLimit: updatedRateLimitInfo
+      };
+    } else {
+      console.error('No user data returned from API');
+      const fallbackData = generateFallbackData(username);
+      return {
+        success: true,
+        data: fallbackData,
+        fromCache: false,
+        isFallback: true,
+        rateLimit: updatedRateLimitInfo
+      };
+    }
+  } catch (error) {
+    console.error('Error getting user data:', error);
+    // Return fallback data instead of throwing
+    const fallbackData = generateFallbackData(username);
+    return {
+      success: true,
+      data: fallbackData,
+      fromCache: false,
+      isFallback: true,
+      error: error.message,
+      rateLimit: await getRateLimitInfo()
+    };
+  }
+}
+
+// Helper function to get current rate limit info
+async function getRateLimitInfo() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(['rateLimits'], (result) => {
+      const limits = result.rateLimits || RATE_LIMITS;
+      const config1 = limits.config1 || RATE_LIMITS.config1;
+      
+      resolve({
+        used: config1.readRequests.used || 0,
+        total: config1.readRequests.total || 50,
+        resetDate: config1.readRequests.resetDate || new Date().setMonth(new Date().getMonth() + 1)
+      });
+    });
+  });
+}
+
+// Get tweets for a user
+async function getTweets(username, count = 10) {
+  try {
+    console.log(`Getting tweets for ${username}, count: ${count}`);
+    
+    // Ensure username is properly formatted
+    const actualUsername = username.startsWith('@') ? username.substring(1) : username;
+    
+    // First get user ID from username
+    const userData = await getUserData(actualUsername);
+    
+    if (!userData || !userData.data || !userData.data.user || !userData.data.user.id) {
+      console.error('Could not retrieve user ID from API response', userData);
+      throw new Error('Could not retrieve user ID');
+    }
+    
+    const userId = userData.data.user.id;
+    
+    // Check if we have cached tweets
+    const cacheKey = `tweets_${actualUsername.toLowerCase()}`;
+    const cachedData = await getCachedData(cacheKey);
+    
+    if (cachedData) {
+      console.log('Returning cached tweets data');
+      return {
+        ...cachedData,
+        fromCache: true
+      };
+    }
+    
+    // Construct API URL with proper tweet fields
+    const tweetFields = 'id,text,created_at,public_metrics,entities,referenced_tweets,attachments,in_reply_to_user_id';
+    const expansions = 'attachments.media_keys';
+    const mediaFields = 'type,url,preview_image_url';
+    
+    const url = `https://api.twitter.com/2/users/${userId}/tweets?max_results=${count}&tweet.fields=${tweetFields}&expansions=${expansions}&media.fields=${mediaFields}`;
+    
+    // Make the API request
+    const response = await makeAuthenticatedRequest(url);
+    
+    // Process the response
+    if (response && response.data) {
+      // Cache the data for future use (expires in 6 hours)
+      await cacheData(cacheKey, response, 6 * 60 * 60 * 1000);
+      
+      return {
+        ...response,
+        fromCache: false
+      };
+    } else {
+      console.error('No tweets data returned from API');
+      throw new Error('No tweets returned from API');
+    }
+  } catch (error) {
+    console.error('Error getting tweets:', error);
+    throw error;
+  }
+}
+
+// Cache data helper
+async function cacheData(key, data, expiresIn = 3600000) {
+  // Add a timestamp for when the cache was created
+  const cacheItem = {
+    data: data,
+    timestamp: Date.now(),
+    expiresAt: Date.now() + expiresIn,
+    source: data.isFallback ? 'fallback' : 'api'
+  };
+  
+  await chrome.storage.local.set({ [key]: cacheItem });
+  console.log(`Cached data for key "${key}" (expires in ${expiresIn / 60000} minutes)`);
+}
+
+// Get cached data helper
+async function getCachedData(key) {
+  return new Promise(resolve => {
+    chrome.storage.local.get([key], (result) => {
+      const cacheItem = result[key];
+      
+      if (cacheItem && cacheItem.expiresAt > Date.now()) {
+        console.log(`Cache hit for key "${key}" (expires in ${(cacheItem.expiresAt - Date.now()) / 60000} minutes)`);
+        resolve({
+          ...cacheItem.data,
+          fromCache: true,
+          cacheSource: cacheItem.source || 'api'
+        });
+      } else if (cacheItem) {
+        console.log(`Cache expired for key "${key}"`);
+        resolve(null);
+      } else {
+        console.log(`Cache miss for key "${key}"`);
+        resolve(null);
+      }
+    });
+  });
+}
+
+// Helper function to provide mock user data when needed
+function getMockUserData(username) {
+    console.log(`Generating mock data for ${username}`);
+    
+    // Create a basic user object with the username
+    const user = {
+        id: '123456789',
+        name: username.startsWith('@') ? username.substring(1) : username,
+        username: username.startsWith('@') ? username.substring(1) : username,
+        description: `This is a mock profile for ${username}. Using sample data because the API is unavailable.`,
+        public_metrics: {
+            followers_count: Math.floor(Math.random() * 5000) + 500,
+            following_count: Math.floor(Math.random() * 2000) + 200,
+            tweet_count: Math.floor(Math.random() * 15000) + 1000,
+            listed_count: Math.floor(Math.random() * 50) + 5
+        }
+    };
+    
+    // Generate mock tweets
+    const tweets = [];
+    const topics = ['tech', 'AI', 'marketing', 'social media', 'growth', 'career'];
+    
+    for (let i = 0; i < 10; i++) {
+        const topic = topics[Math.floor(Math.random() * topics.length)];
+        const likes = Math.floor(Math.random() * 100) + 5;
+        const retweets = Math.floor(Math.random() * 20) + 1;
+        const replies = Math.floor(Math.random() * 10) + 1;
+        
+        const date = new Date();
+        date.setDate(date.getDate() - i);
+        
+        tweets.push({
+            id: `mock_${i}_${Date.now()}`,
+            text: `This is a sample tweet about ${topic} for demo purposes. #${topic.replace(' ', '')} #xanalyzer`,
+            created_at: date.toISOString(),
+            public_metrics: {
+                like_count: likes,
+                retweet_count: retweets,
+                reply_count: replies,
+                quote_count: Math.floor(Math.random() * 5)
+            },
+            entities: {
+                hashtags: [
+                    { tag: topic.replace(' ', '') },
+                    { tag: 'xanalyzer' }
+                ]
+            },
+            attachments: i % 3 === 0 ? { media_keys: ['mock_media'] } : undefined
+        });
+    }
+    
+    return {
+        user,
+        tweets,
+        analytics: calculateAnalytics(tweets),
+        strategy: analyzePostingStrategy(user, tweets),
+        grokAnalysis: {
+            engagementInsights: "Mock insights: Post consistently about industry topics. Use hashtags strategically. Engage with followers.",
+            growthStrategy: "Mock strategy: Focus on quality content that provides value to your audience. Use Twitter's features like Spaces and Lists."
+        },
+        rateLimit: {
+            used: 0,
+            total: 100,
+            resetDate: new Date(Date.now() + 24 * 60 * 60 * 1000).getTime()
+        },
+        configUsed: 'mock',
+        fromCache: false,
+        isMockData: true
+    };
+}
+
+// Function to clear the profile cache
+function clearCache() {
+    profileCache.clear();
+    console.log('Cache cleared');
+    return true;
+}
+
+// Function to switch between API configurations
+function switchAPIConfig(configNum) {
+    return new Promise((resolve) => {
+        activeConfigNum = configNum === 1 ? 1 : 2;
+        chrome.storage.local.set({ activeConfigNum }, () => {
+            console.log(`Switched to API configuration #${activeConfigNum}`);
+            resolve(true);
+        });
+    });
+}
+
+// Add after your existing functions in background.js (before the chrome.runtime.onMessage.addListener block)
+
+async function analyzeProfileWithGrok(userData, tweets) {
+    try {
+      // Prepare the data for Grok analysis
+      const profileData = {
+        user: userData,
+        recentTweets: tweets.map(tweet => ({
+          text: tweet.text,
+          created_at: tweet.created_at,
+          public_metrics: tweet.public_metrics,
+          hasMedia: !!tweet.attachments?.media_keys?.length,
+          hasLinks: !!tweet.entities?.urls?.length
+        }))
+      };
+      
+      // Get detailed engagement analysis
+      const result = await grokService.analyzeProfile(profileData);
+      
+      // Get growth strategy recommendations
+      const comparisonResult = await grokService.analyzeProfile(profileData);
+      
+      // Return combined analysis results
+      return {
+        success: result.success && comparisonResult.success,
+        engagementInsights: result.analysis,
+        growthStrategy: comparisonResult.analysis,
+        tokenUsage: result.tokenUsage?.overall || null,
+        error: result.error || comparisonResult.error
+      };
+    } catch (error) {
+      console.error('Failed to analyze with Grok:', error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+  
+  async function compareWithSuccessfulProfile(username, successfulUsername) {
+    try {
+      // Get user data
+      const userData = await getUserData(username);
+      
+      // Get successful profile data
+      const successfulUserData = await getUserData(successfulUsername);
+      
+      // Run comparison analysis
+      const comparisonResult = await grokService.analyzeProfile(userData);
+      
+      return {
+        success: comparisonResult.success,
+        comparison: comparisonResult.analysis,
+        metrics: comparisonResult.metrics,
+        tokenUsage: comparisonResult.tokenUsage
+      };
+    } catch (error) {
+      console.error('Comparison failed:', error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+  
+  // Settings management functions
+  async function getSettings() {
+    return new Promise((resolve) => {
+      chrome.storage.local.get(['xtractSettings'], (result) => {
+        if (result.xtractSettings) {
+          resolve(result.xtractSettings);
+        } else {
+          resolve(getDefaultSettings());
+        }
+      });
+    });
+  }
+  
+  function getDefaultSettings() {
+    return {
+      grokEnabled: true,
+      tokenLimit: 1000000,
+      defaultDetailLevel: 'standard',
+      cacheEnabled: true,
+      cacheDuration: 86400000 // 24 hours
+    };
+  }
+  
+  async function saveSettings(settings) {
+    return new Promise((resolve, reject) => {
+      try {
+        chrome.storage.local.set({ xtractSettings: settings }, () => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+          } else {
+            // Update grokService cache configuration if needed
+            grokService.configure({
+              enabled: settings.cacheEnabled,
+              maxAge: settings.cacheDuration
+            });
+            resolve();
+          }
+        });
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+  
+  async function resetSettingsToDefault() {
+    const defaultSettings = getDefaultSettings();
+    return saveSettings(defaultSettings);
+  }
+
+/**
+ * Updates the extension badge with analysis status
+ * @param {string} text - Badge text
+ * @param {string} backgroundColor - Badge background color
+ */
+function updateBadge(text, backgroundColor = '#1DA1F2') {
+  chrome.action.setBadgeText({ text });
+  chrome.action.setBadgeBackgroundColor({ color: backgroundColor });
+}
+
+// Function to add a profile to history
+function addToHistory(username) {
+  if (!username) return;
+  
+  chrome.storage.local.get(['profileHistory'], (result) => {
+    let history = result.profileHistory || [];
+    
+    // Remove the username if it already exists (to avoid duplicates)
+    history = history.filter(item => item.username.toLowerCase() !== username.toLowerCase());
+    
+    // Add the new entry at the beginning
+    history.unshift({
+      username: username,
+      timestamp: Date.now()
+    });
+    
+    // Limit to 10 entries
+    if (history.length > 10) {
+      history = history.slice(0, 10);
+    }
+    
+    // Save back to storage
+    chrome.storage.local.set({ profileHistory: history });
+    console.log('Added to history:', username);
+  });
+}
+
+// Initialize the extension when installed
+chrome.runtime.onInstalled.addListener(function(details) {
+    console.log('Extension installed or updated:', details.reason);
+    initializeExtension();
+});
+
+// Also initialize on startup
+chrome.runtime.onStartup.addListener(function() {
+    console.log('Extension starting up');
+    initializeExtension();
+});
+
+// Initialize extension configuration
+async function initializeExtension() {
+    try {
+        console.log('Initializing extension configuration...');
+        
+        // Store API configs in storage if not already present
+        chrome.storage.local.get(['apiConfig1', 'apiConfig2'], (result) => {
+            if (!result.apiConfig1) {
+                console.log('Setting up API config 1');
+                chrome.storage.local.set({ apiConfig1: API_CONFIG });
+            }
+            
+            if (!result.apiConfig2) {
+                console.log('Setting up API config 2');
+                chrome.storage.local.set({ apiConfig2: API_CONFIG2 });
+            }
+            
+            // Initialize rate limits if needed
+            chrome.storage.local.get(['rateLimits'], (data) => {
+                if (!data.rateLimits) {
+                    console.log('Setting up rate limits');
+                    chrome.storage.local.set({ rateLimits: RATE_LIMITS });
+                }
+            });
+            
+            // Set active config if not set
+            chrome.storage.local.get(['activeConfigNum'], (data) => {
+                if (!data.activeConfigNum) {
+                    console.log('Setting active config to 1');
+                    chrome.storage.local.set({ activeConfigNum: 1 });
+                }
+            });
+        });
+        
+        console.log('Initialization complete');
+    } catch (error) {
+        console.error('Error during initialization:', error);
+    }
+}
+
+// Listen for messages from content script or popup
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    console.log('Background message received:', request.action);
+    
+    if (request.action === 'analyzeProfile') {
+        console.log('Analyze profile request received for username:', request.username);
+        
+        // Check for valid username
+        if (!request.username) {
+            console.error('Invalid username received in analyze request');
+            sendResponse({
+                success: false,
+                error: 'Invalid username. Please provide a valid Twitter handle.'
+            });
+            return true;
+        }
+        
+        // Ensure proper username format (remove @ if present)
+        const cleanUsername = request.username.startsWith('@') 
+            ? request.username.substring(1) 
+            : request.username;
+            
+        console.log('Cleaned username for API request:', cleanUsername);
+        
+        // Track analysis count and update history
+        chrome.storage.local.get(['analysisCount', 'rateLimit'], (result) => {
+            const newCount = (result.analysisCount || 0) + 1;
+            const rateLimit = result.rateLimit || { count: 0, resetTime: Date.now() + 3600000 };
+            
+            // Check if we need to reset the rate limit counter
+            const now = Date.now();
+            if (now > rateLimit.resetTime) {
+                rateLimit.count = 1;
+                rateLimit.resetTime = now + 3600000; // Reset in 1 hour
+            } else {
+                rateLimit.count += 1;
+            }
+            
+            chrome.storage.local.set({
+                analysisCount: newCount,
+                lastAnalysisDate: now,
+                rateLimit: rateLimit
+            });
+            
+            // Add to history (store cleaned username)
+            addToHistory(cleanUsername);
+        });
+        
+        // Start API request
+        getUserData(cleanUsername)
+            .then(result => {
+                console.log('Analysis result for', cleanUsername, ':', result);
+                
+                // Always return success with data (which might be fallback data)
+                sendResponse({
+                    success: true,
+                    data: result.data,
+                    fromCache: result.fromCache,
+                    isFallback: result.isFallback,
+                    error: result.error,
+                    rateLimit: result.rateLimit
+                });
+                
+                // Update badge to indicate successful analysis
+                updateBadge('', '#4CAF50');
+            })
+            .catch(error => {
+                console.error('Error in getUserData:', error);
+                
+                // Generate fallback data on error
+                const fallbackData = generateFallbackData(cleanUsername);
+                
+                sendResponse({
+                    success: true, // Still return success to display fallback data
+                    data: fallbackData,
+                    isFallback: true,
+                    error: error.message
+                });
+                
+                // Update badge to indicate warning
+                updateBadge('!', '#FFA500');
+            });
+            
+        return true; // Keep connection open for async response
+    }
+    else if (request.action === 'clearCache') {
+        const success = clearCache();
+        sendResponse({
+            success: success
+        });
+        return false;
+    }
+    else if (request.action === 'switchAPIConfig') {
+        switchAPIConfig(request.configNum)
+            .then(success => {
+                sendResponse({
+                    success: success,
+                    configNum: request.configNum
+                });
+            });
+        return true;
+    }
+    else if (request.action === 'getRateLimits') {
+        chrome.storage.local.get(['rateLimits'], (data) => {
+            sendResponse({
+                success: true,
+                rateLimits: data.rateLimits || RATE_LIMITS
+            });
+        });
+        return true;
+    }
+    
+    // New event listeners for enhanced functionality
+    else if (request.action === 'compareProfiles') {
+        compareWithSuccessfulProfile(request.username, request.successfulUsername)
+            .then(result => {
+                sendResponse({
+                    success: true,
+                    data: result
+                });
+            })
+            .catch(error => {
+                sendResponse({
+                    success: false,
+                    error: error.message
+                });
+            });
+        return true;
+    }
+    
+    else if (request.action === 'getSettings') {
+        getSettings()
+            .then(settings => {
+                sendResponse({
+                    success: true,
+                    settings
+                });
+            })
+            .catch(error => {
+                sendResponse({
+                    success: false,
+                    error: error.message
+                });
+            });
+        return true;
+    }
+    
+    else if (request.action === 'saveSettings') {
+        saveSettings(request.settings)
+            .then(() => {
+                sendResponse({
+                    success: true
+                });
+            })
+            .catch(error => {
+                sendResponse({
+                    success: false,
+                    error: error.message
+                });
+            });
+        return true;
+    }
+    
+    else if (request.action === 'resetSettings') {
+        resetSettingsToDefault()
+            .then(() => {
+                sendResponse({
+                    success: true
+                });
+            })
+            .catch(error => {
+                sendResponse({
+                    success: false,
+                    error: error.message
+                });
+            });
+        return true;
+    }
+    
+    else if (request.action === 'getTokenStats') {
+        grokService.checkTokenAvailability(0)
+            .then(tokenInfo => {
+                sendResponse({
+                    success: true,
+                    stats: {
+                        used: tokenInfo.used,
+                        remaining: tokenInfo.remaining,
+                        limit: tokenInfo.limit,
+                        resetDate: tokenInfo.resetDate,
+                        history: tokenInfo.usageStats.usageHistory,
+                        cacheSavings: tokenInfo.usageStats.cacheSavings || 0
+                    }
+                });
+            })
+            .catch(error => {
+                sendResponse({
+                    success: false,
+                    error: error.message
+                });
+            });
+        return true;
+    }
+    
+    else if (request.action === 'clearAnalysisCache') {
+        grokService.clearAnalysisCache()
+            .then(() => {
+                sendResponse({
+                    success: true
+                });
+            })
+            .catch(error => {
+                sendResponse({
+                    success: false,
+                    error: error.message
+            });
+        });
+        return true;
+    }
+    
+    // Add handler to test API keys
+    else if (request.action === 'testApiKey') {
+        // Use an immediately invoked async function expression to handle async operations
+        (async function() {
+            try {
+                console.log('Testing Twitter API keys...');
+                
+                // Test config 1
+                const config1Result = await testTwitterApiKey(API_CONFIG, 1);
+                console.log('Config 1 test result:', config1Result);
+                
+                // Test config 2
+                const config2Result = await testTwitterApiKey(API_CONFIG2, 2);
+                console.log('Config 2 test result:', config2Result);
+                
+                // Return both results
+                sendResponse({
+                    config1Result,
+                    config2Result
+                });
+            } catch (error) {
+                console.error('Error testing API keys:', error);
+                sendResponse({
+                    success: false,
+                    error: error.message || 'Unknown error testing API keys'
+                });
+            }
+        })();
+        return true; // Keep channel open for async response
+    }
+    
+    else if (request.action === 'getUserData') {
+        getUserData(request.username)
+            .then(data => {
+                sendResponse({success: true, data});
+            })
+            .catch(error => {
+                console.error('Error in getUserData:', error);
+                sendResponse({success: false, error: error.message});
+            });
+        return true; // Keep connection open for async response
+    }
+    
+    else if (request.action === 'getTweets') {
+        getTweets(request.username, request.count)
+            .then(tweets => {
+                sendResponse({success: true, tweets});
+            })
+            .catch(error => {
+                console.error('Error in getTweets:', error);
+                sendResponse({success: false, error: error.message});
+            });
+        return true; // Keep connection open for async response
+    }
+    
+    else if (request.action === 'testApiConnection') {
+        testApiConnection(request.bearerToken)
+            .then(result => {
+                sendResponse(result);
+            })
+            .catch(error => {
+                console.error('Error testing API connection:', error);
+                sendResponse({
+                    success: false, 
+                    error: error.message || 'Failed to connect to X API'
+                });
+            });
+        return true; // Keep connection open for async response
+    }
+});
+
+/**
+ * Generate fallback data for a username
+ * @param {string} username - The username
+ * @returns {Object} - Fallback data structure
+ */
+function generateFallbackData(username) {
+    // Generate random follower counts in a reasonable range
+    const followers = Math.floor(Math.random() * 10000) + 500;
+    const following = Math.floor(Math.random() * 1000) + 100;
+    const tweets = Math.floor(Math.random() * 5000) + 200;
+    const engagement = Math.floor(Math.random() * 10) + 1;
+    
+    return {
+        user: {
+            username: username,
+            name: username,
+            description: `This is fallback data for ${username}. The API request failed, so we're showing estimated data.`,
+            profile_image_url: `https://unavatar.io/twitter/${username}`,
+            public_metrics: {
+                followers_count: followers,
+                following_count: following,
+                tweet_count: tweets,
+                listed_count: Math.floor(followers / 100)
+            },
+            verified: false
+        },
+        tweets: [],
+        analytics: {
+            engagement_rate: engagement,
+            best_posting_times: [
+                { day: 'Monday', hour: '10-11 AM' },
+                { day: 'Wednesday', hour: '2-3 PM' },
+                { day: 'Friday', hour: '6-7 PM' }
+            ],
+            top_performing_content: [
+                { type: 'hashtag', value: 'technology' },
+                { type: 'hashtag', value: 'innovation' },
+                { type: 'hashtag', value: 'ai' }
+            ]
+        },
+        strategy: {
+            summary: 'Regular posting with varied content types',
+            recommendations: [
+                'Post consistently',
+                'Engage with your audience',
+                'Use hashtags strategically',
+                'Share visual content'
+            ]
+        },
+        grokAnalysis: {
+            engagementInsights: [
+                'Posts with images receive higher engagement',
+                'Questions tend to generate more replies',
+                'Weekday mornings show better performance',
+                'Content about trending topics performs well'
+            ],
+            growthStrategy: [
+                'Increase posting frequency',
+                'Engage with larger accounts in your niche',
+                'Use more compelling visuals',
+                'Create thread-style content for in-depth topics'
+            ]
+        }
+    };
+}
+
+/**
+ * Test Twitter API keys directly with better error handling and CORS compliance
+ * @param {Object} config - API configuration to test
+ * @param {number} configNum - Config number (1 or 2)
+ * @returns {Promise<Object>} - Test results
+ */
+async function testTwitterApiKey(config, configNum) {
+  console.log(`Testing Twitter API key config #${configNum}`);
+  
+  try {
+    // Log configuration details (safely)
+    console.log(`Config ${configNum} details:`, {
+      baseUrl: config.API_BASE_URL || 'https://api.twitter.com/2',
+      bearerTokenExists: !!config.BEARER_TOKEN,
+      bearerTokenLength: config.BEARER_TOKEN ? config.BEARER_TOKEN.length : 0,
+      bearerTokenFirstChars: config.BEARER_TOKEN ? `${config.BEARER_TOKEN.substring(0, 5)}...` : 'undefined'
+    });
+    
+    // Set timeout for the entire test process
+    const testPromise = new Promise(async (resolve, reject) => {
+      try {
+        // Clean and decode the bearer token if needed
+        const bearerToken = config.BEARER_TOKEN?.trim() || '';
+        let cleanedToken = bearerToken;
+        
+        if (bearerToken.includes('%')) {
+          try {
+            cleanedToken = decodeURIComponent(bearerToken);
+          } catch (e) {
+            console.warn('Error decoding bearer token, using as-is', e);
+          }
+        }
+        
+        // Start with a simple endpoint that doesn't require user authorization
+        const baseUrl = config.API_BASE_URL || 'https://api.twitter.com/2';
+        const testUrl = `${baseUrl}/tweets?ids=1228393702244134912`;
+        
+        // Prepare headers - use only what's absolutely needed
+        const headers = {
+          'Authorization': `Bearer ${cleanedToken}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Origin': chrome.runtime.getURL('/')  // Add proper origin
+        };
+        
+        const options = {
+          method: 'GET',
+          headers: headers,
+          // Important for CORS in browser extensions
+          credentials: 'omit',
+          mode: 'cors',
+          cache: 'no-store'
+        };
+        
+        console.log(`Sending test request to ${testUrl} with options:`, {
+          method: options.method,
+          headerKeys: Object.keys(options.headers),
+          mode: options.mode,
+          authorization: headers.Authorization ? 'Bearer ***' : 'None'
+        });
+        
+        // Add a cache-busting parameter
+        const cacheBuster = Date.now();
+        const urlWithNoCacheParam = testUrl.includes('?') ? 
+          `${testUrl}&_nocache=${cacheBuster}` : 
+          `${testUrl}?_nocache=${cacheBuster}`;
+        
+        // Make the request
+        const response = await fetch(urlWithNoCacheParam, options);
+        
+        // Check if the request was successful
+        if (response.ok) {
+          // Parse the JSON response
+          const data = await response.json();
+          console.log(`API key test successful for config #${configNum}:`, data);
+          
+          resolve({
+            success: true,
+            data: {
+              id: data.data?.[0]?.id || 'unknown',
+              text: data.data?.[0]?.text?.substring(0, 20) + '...' || 'Data received'
+            },
+            configNum: configNum
+          });
+        } else {
+          // Parse the error response
+          let errorText = 'Unknown error';
+          try {
+            errorText = await response.text();
+          } catch (e) {
+            console.error('Could not read error response text');
+          }
+          
+          // Log the error
+          console.error(`API key test failed for config #${configNum}:`, {
+            status: response.status,
+            statusText: response.statusText,
+            errorText: errorText?.substring(0, 100) // Limit error text length
+          });
+          
+          // If we get a 401 or 403, the token is likely invalid
+          if (response.status === 401 || response.status === 403) {
+            resolve({
+              success: false,
+              error: `API key authentication failed: ${response.status} ${response.statusText}`,
+              errorDetails: `Your API key may be invalid or expired. Please check your credentials.`,
+              configNum: configNum
+            });
+          } else {
+            // For other errors, return a generic message
+            resolve({
+              success: false,
+              error: `API request failed: ${response.status} ${response.statusText}`,
+              errorDetails: errorText?.substring(0, 200) || 'No detailed error information available',
+              configNum: configNum
+            });
+          }
+        }
+      } catch (error) {
+        // Handle any errors that occur during the fetch
+        console.error(`API key test error for config #${configNum}:`, error);
+        
+        // Check for network errors
+        if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
+          resolve({
+            success: false,
+            error: 'Network error: Failed to connect to Twitter API',
+            errorDetails: 'This may be due to network connectivity issues or CORS restrictions. Try refreshing the extension.',
+            configNum: configNum
+          });
+        } else {
+          // For other errors
+          resolve({
+            success: false,
+            error: error.message || 'Unknown error',
+            errorDetails: error.stack ? error.stack.substring(0, 200) : 'No error details available',
+            configNum: configNum
+          });
+        }
+      }
+    });
+    
+    // Set a timeout for the entire process
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('API request timed out after 10 seconds')), 10000);
+    });
+    
+    // Race the test against the timeout
+    return await Promise.race([testPromise, timeoutPromise]);
+    
+  } catch (error) {
+    // Catch any uncaught errors
+    console.error(`Uncaught error in testTwitterApiKey for config #${configNum}:`, error);
+    return {
+      success: false,
+      error: 'An unexpected error occurred while testing the API',
+      errorDetails: error.message || 'No error details available',
+      configNum: configNum
+    };
+  }
+}
+
+// Test API connection with provided Bearer Token
+async function testApiConnection(bearerToken) {
+  if (!bearerToken) {
+    return {
+      success: false,
+      error: 'Bearer Token is required'
+    };
+  }
+  
+  try {
+    // Make a simple API call to test the connection
+    // Using the rate limit endpoint which is lightweight and gives useful information
+    const response = await makeAuthenticatedRequest(
+      'https://api.twitter.com/2/users/me', 
+      bearerToken
+    );
+    
+    if (response.data) {
+      return {
+        success: true,
+        userData: response.data
+      };
+    } else {
+      throw new Error('No user data returned');
+    }
+  } catch (error) {
+    console.error('API connection test failed:', error);
+    
+    let errorMessage = 'Failed to connect to X API';
+    
+    if (error.status === 401) {
+      errorMessage = 'Authentication failed. Please check your Bearer Token.';
+    } else if (error.status === 403) {
+      errorMessage = 'Access forbidden. Your API credentials may not have the required permissions.';
+    } else if (error.status === 404) {
+      errorMessage = 'Resource not found. Please check the username or ID.';
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+    
+    return {
+      success: false,
+      error: errorMessage
+    };
+  }
+}

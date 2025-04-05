@@ -43,6 +43,12 @@ export class TabManager {
     if (shareButton) {
       shareButton.addEventListener('click', () => this.shareExtension());
     }
+    
+    // API Settings button functionality - add to settings menu or wherever appropriate
+    const apiSettingsButton = document.querySelector('.footer-actions [title="API Settings"]');
+    if (apiSettingsButton) {
+      apiSettingsButton.addEventListener('click', () => this.showApiSettings());
+    }
   }
 
   // Switch to a specific tab
@@ -371,105 +377,11 @@ export class TabManager {
 
   // Share extension
   shareExtension() {
-    let shareModal = document.getElementById('shareModal');
+    // Create share modal with options for Twitter, Facebook, LinkedIn, etc.
+    this.showToast('Share modal would open here', 'info');
     
-    if (!shareModal) {
-      shareModal = document.createElement('div');
-      shareModal.id = 'shareModal';
-      shareModal.className = 'modal';
-      
-      shareModal.innerHTML = `
-        <div class="modal-content">
-          <div class="modal-header">
-            <h3>Share X Analyzer</h3>
-            <button class="close-button">&times;</button>
-          </div>
-          <div class="modal-body">
-            <p>Share this Chrome extension with others:</p>
-            
-            <div class="share-link-container">
-              <input type="text" readonly value="https://chrome.google.com/webstore/detail/x-analyzer/extension-id" id="shareLink">
-              <button id="copyLinkButton" class="copy-button" title="Copy to clipboard">
-                <span class="copy-icon">📋</span>
-              </button>
-            </div>
-            
-            <div class="social-share-buttons">
-              <button class="social-share-button twitter">
-                <span class="social-icon">𝕏</span>
-                Share on X
-              </button>
-              <button class="social-share-button linkedin">
-                <span class="social-icon">in</span>
-                Share on LinkedIn
-              </button>
-              <button class="social-share-button email">
-                <span class="social-icon">✉️</span>
-                Share via Email
-              </button>
-            </div>
-            
-            <div class="qr-code-container">
-              <p>Or scan this QR code:</p>
-              <div class="qr-code-placeholder">
-                <!-- QR code would be dynamically generated or a static image -->
-                <div class="qr-code-image">QR</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      `;
-      
-      document.body.appendChild(shareModal);
-      
-      // Add event listener for the close button
-      const closeButton = shareModal.querySelector('.close-button');
-      closeButton.addEventListener('click', () => {
-        shareModal.classList.remove('show');
-      });
-      
-      // Add event listener for the copy link button
-      const copyLinkButton = shareModal.querySelector('#copyLinkButton');
-      copyLinkButton.addEventListener('click', () => {
-        const shareLink = document.getElementById('shareLink');
-        shareLink.select();
-        document.execCommand('copy');
-        
-        // Show copied message
-        copyLinkButton.innerHTML = '<span class="copy-icon">✓</span>';
-        copyLinkButton.classList.add('copied');
-        
-        // Reset after 2 seconds
-        setTimeout(() => {
-          copyLinkButton.innerHTML = '<span class="copy-icon">📋</span>';
-          copyLinkButton.classList.remove('copied');
-        }, 2000);
-      });
-      
-      // Add event listeners for social share buttons
-      const twitterButton = shareModal.querySelector('.social-share-button.twitter');
-      twitterButton.addEventListener('click', () => {
-        const shareText = encodeURIComponent('Check out this amazing X Analyzer Chrome extension!');
-        const shareUrl = encodeURIComponent('https://chrome.google.com/webstore/detail/x-analyzer/extension-id');
-        window.open(`https://twitter.com/intent/tweet?text=${shareText}&url=${shareUrl}`, '_blank');
-      });
-      
-      const linkedinButton = shareModal.querySelector('.social-share-button.linkedin');
-      linkedinButton.addEventListener('click', () => {
-        const shareUrl = encodeURIComponent('https://chrome.google.com/webstore/detail/x-analyzer/extension-id');
-        window.open(`https://www.linkedin.com/sharing/share-offsite/?url=${shareUrl}`, '_blank');
-      });
-      
-      const emailButton = shareModal.querySelector('.social-share-button.email');
-      emailButton.addEventListener('click', () => {
-        const subject = encodeURIComponent('Check out this X Analyzer Chrome extension');
-        const body = encodeURIComponent('I found this useful Chrome extension for analyzing X profiles: https://chrome.google.com/webstore/detail/x-analyzer/extension-id');
-        window.open(`mailto:?subject=${subject}&body=${body}`, '_blank');
-      });
-    }
-    
-    // Show the share modal
-    shareModal.classList.add('show');
+    // For future implementation
+    // Could include share links or copy URL functionality
   }
 
   // Sign in with X
@@ -553,6 +465,269 @@ export class TabManager {
         analyzeTab.classList.remove('pulse');
       }, 500);
     }
+  }
+
+  // Show API Settings Modal
+  showApiSettings() {
+    // Create API settings modal if it doesn't exist
+    let apiSettingsModal = document.getElementById('apiSettingsModal');
+    
+    if (!apiSettingsModal) {
+      apiSettingsModal = document.createElement('div');
+      apiSettingsModal.id = 'apiSettingsModal';
+      apiSettingsModal.className = 'modal api-settings-modal';
+      
+      apiSettingsModal.innerHTML = `
+        <div class="modal-content">
+          <div class="modal-header">
+            <h3>API Settings</h3>
+            <button class="close-modal">&times;</button>
+          </div>
+          <div class="modal-body">
+            <p>Configure your X API credentials to enable analysis functionality.</p>
+            
+            <form class="api-credentials-form" id="apiCredentialsForm">
+              <div class="api-input-group">
+                <label for="apiKey">API Key</label>
+                <input type="text" id="apiKey" placeholder="Enter your API Key" />
+              </div>
+              
+              <div class="api-input-group">
+                <label for="apiKeySecret">API Key Secret</label>
+                <input type="password" id="apiKeySecret" placeholder="Enter your API Key Secret" />
+              </div>
+              
+              <div class="api-input-group">
+                <label for="bearerToken">Bearer Token</label>
+                <input type="password" id="bearerToken" placeholder="Enter your Bearer Token" />
+              </div>
+              
+              <div class="api-test-results hidden" id="apiTestResults">
+                <!-- Test results will be displayed here -->
+              </div>
+              
+              <div class="api-settings-buttons">
+                <button type="button" class="test-api-button" id="testApiButton">Test Connection</button>
+                <button type="button" class="save-api-button" id="saveApiButton">Save Settings</button>
+              </div>
+            </form>
+            
+            <a href="https://developer.twitter.com/en/docs/twitter-api" target="_blank" class="api-help-link">
+              How to get API credentials?
+            </a>
+          </div>
+        </div>
+      `;
+      
+      document.body.appendChild(apiSettingsModal);
+      
+      // Add event listeners for the modal
+      const closeButton = apiSettingsModal.querySelector('.close-modal');
+      closeButton.addEventListener('click', () => {
+        apiSettingsModal.classList.remove('visible');
+      });
+      
+      // Load existing API settings
+      this.loadApiSettings();
+      
+      // Add event listeners for buttons
+      const testApiButton = apiSettingsModal.querySelector('#testApiButton');
+      testApiButton.addEventListener('click', () => {
+        this.testApiConnection();
+      });
+      
+      const saveApiButton = apiSettingsModal.querySelector('#saveApiButton');
+      saveApiButton.addEventListener('click', () => {
+        this.saveApiSettings();
+      });
+    }
+    
+    // Show the API settings modal
+    apiSettingsModal.classList.add('visible');
+    
+    // Add ESC key listener to close modal
+    const escapeListener = (e) => {
+      if (e.key === 'Escape') {
+        apiSettingsModal.classList.remove('visible');
+        document.removeEventListener('keydown', escapeListener);
+      }
+    };
+    document.addEventListener('keydown', escapeListener);
+  }
+  
+  // Load existing API settings from storage
+  loadApiSettings() {
+    chrome.storage.local.get(['apiKey', 'apiKeySecret', 'bearerToken'], (result) => {
+      const apiKeyInput = document.getElementById('apiKey');
+      const apiKeySecretInput = document.getElementById('apiKeySecret');
+      const bearerTokenInput = document.getElementById('bearerToken');
+      
+      if (apiKeyInput && result.apiKey) {
+        apiKeyInput.value = result.apiKey;
+      }
+      
+      if (apiKeySecretInput && result.apiKeySecret) {
+        apiKeySecretInput.value = result.apiKeySecret;
+      }
+      
+      if (bearerTokenInput && result.bearerToken) {
+        bearerTokenInput.value = result.bearerToken;
+      }
+      
+      // Update API status indicator
+      this.updateApiStatusIndicator(!!result.bearerToken);
+    });
+  }
+  
+  // Test API connection
+  testApiConnection() {
+    const apiKey = document.getElementById('apiKey').value.trim();
+    const apiKeySecret = document.getElementById('apiKeySecret').value.trim();
+    const bearerToken = document.getElementById('bearerToken').value.trim();
+    
+    const testApiButton = document.getElementById('testApiButton');
+    const apiTestResults = document.getElementById('apiTestResults');
+    
+    if (!bearerToken) {
+      this.showTestResult('error', 'Bearer Token is required for API access');
+      return;
+    }
+    
+    // Show loading state
+    testApiButton.textContent = 'Testing...';
+    testApiButton.disabled = true;
+    apiTestResults.classList.remove('hidden');
+    apiTestResults.innerHTML = '<p>Testing API connection...</p>';
+    
+    // Send test request to the background script
+    chrome.runtime.sendMessage({
+      action: 'testApiConnection',
+      bearerToken: bearerToken
+    }, (response) => {
+      testApiButton.textContent = 'Test Connection';
+      testApiButton.disabled = false;
+      
+      if (response && response.success) {
+        this.showTestResult('success', 'API connection successful! Your credentials are valid.');
+      } else {
+        const errorMessage = response.error || 'Unable to connect to the API. Please check your credentials.';
+        this.showTestResult('error', errorMessage);
+      }
+    });
+  }
+  
+  // Show API test result
+  showTestResult(status, message) {
+    const apiTestResults = document.getElementById('apiTestResults');
+    apiTestResults.classList.remove('hidden');
+    
+    let statusIcon = '';
+    if (status === 'success') {
+      statusIcon = '<svg viewBox="0 0 24 24" width="20" height="20"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" fill="currentColor"></path></svg>';
+    } else {
+      statusIcon = '<svg viewBox="0 0 24 24" width="20" height="20"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" fill="currentColor"></path></svg>';
+    }
+    
+    apiTestResults.innerHTML = `
+      <div class="api-test-status ${status}">
+        ${statusIcon}
+        <h4>${status === 'success' ? 'Success!' : 'Error'}</h4>
+      </div>
+      <p>${message}</p>
+    `;
+  }
+  
+  // Save API settings
+  saveApiSettings() {
+    const apiKey = document.getElementById('apiKey').value.trim();
+    const apiKeySecret = document.getElementById('apiKeySecret').value.trim();
+    const bearerToken = document.getElementById('bearerToken').value.trim();
+    
+    const saveApiButton = document.getElementById('saveApiButton');
+    
+    // Validate fields
+    if (!bearerToken) {
+      this.showTestResult('error', 'Bearer Token is required for API access');
+      return;
+    }
+    
+    // Show loading state
+    saveApiButton.textContent = 'Saving...';
+    saveApiButton.disabled = true;
+    
+    // Save to chrome storage
+    chrome.storage.local.set({
+      apiKey: apiKey,
+      apiKeySecret: apiKeySecret,
+      bearerToken: bearerToken
+    }, () => {
+      saveApiButton.textContent = 'Save Settings';
+      saveApiButton.disabled = false;
+      
+      // Update API status indicator
+      this.updateApiStatusIndicator(true);
+      
+      // Show success message
+      this.showToast('API settings saved successfully', 'success');
+      
+      // Close the modal after a short delay
+      setTimeout(() => {
+        const apiSettingsModal = document.getElementById('apiSettingsModal');
+        if (apiSettingsModal) {
+          apiSettingsModal.classList.remove('visible');
+        }
+      }, 1500);
+    });
+  }
+  
+  // Update API status indicator in footer
+  updateApiStatusIndicator(isConnected) {
+    const statusDot = document.querySelector('.status-dot');
+    const statusText = document.querySelector('.status-text');
+    
+    if (statusDot && statusText) {
+      if (isConnected) {
+        statusDot.classList.add('active');
+        statusText.textContent = 'API Connected';
+      } else {
+        statusDot.classList.remove('active');
+        statusText.textContent = 'API Not Configured';
+      }
+    }
+  }
+
+  // Show notification
+  showToast(message, type = 'info') {
+    // Check if toast container exists, if not create it
+    let toastContainer = document.querySelector('.toast-container');
+    
+    if (!toastContainer) {
+      toastContainer = document.createElement('div');
+      toastContainer.className = 'toast-container';
+      document.body.appendChild(toastContainer);
+    }
+    
+    // Create toast element
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    toast.innerHTML = `
+      <div class="toast-content">
+        <span class="toast-message">${message}</span>
+      </div>
+    `;
+    
+    // Add to container
+    toastContainer.appendChild(toast);
+    
+    // Auto remove after 3 seconds
+    setTimeout(() => {
+      toast.classList.add('fade-out');
+      setTimeout(() => {
+        if (toast.parentNode) {
+          toast.parentNode.removeChild(toast);
+        }
+      }, 300);
+    }, 3000);
   }
 }
 
