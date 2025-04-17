@@ -14,6 +14,43 @@ This Chrome extension analyzes Twitter/X profiles, providing engagement metrics,
 - Proxy support for reliable API access
 - Caching for faster repeat analyses
 
+## How It Works
+
+### Architecture Overview
+
+The X-Analyzer extension consists of three main components:
+
+1. **Chrome Extension UI** - The user interface for interacting with the analyzer
+2. **Background Service** - Handles API requests and data processing
+3. **Proxy Server** - Optional server component for secure API access
+
+### Data Flow
+
+1. User enters a Twitter/X username in the extension popup
+2. The extension sends the request to the background script
+3. Background script either:
+   - Makes a direct API call to Twitter/X API (if credentials are configured)
+   - Routes the request through the proxy server (if enabled)
+4. The API response is processed, analyzed, and cached
+5. Results are displayed in the extension UI with metrics and recommendations
+
+### Key Components
+
+- **Popup UI (`popup.js`, `popup.html`)**: The main interface that users interact with
+- **Background Script (`background.js`)**: Handles message passing and API requests
+- **UI Helpers (`uiHelpers.js`)**: Manages loading states, toasts, and progress bars
+- **Direct Handler (`directHandler.js`)**: Processes user interactions and UI updates
+- **API Connection Manager**: Manages API credentials and connections
+- **Proxy Configuration**: Handles secure routing through the proxy server
+
+### Proxy Server
+
+The proxy server component:
+- Resolves CORS issues that prevent direct API access from extensions
+- Securely stores API credentials
+- Manages rate limiting across multiple users
+- Provides standardized error handling
+
 ## Installation
 
 ### Prerequisites
@@ -123,6 +160,12 @@ If you encounter any issues:
   - `auth-handler.js` - Authentication and token management
   - `api-handler.js` - API request handling
   - `proxy-config.js` - Proxy configuration
+  - `background.js` - Background service worker
+  - `directHandler.js` - UI event handling
+  - `utils/` - Utility functions and helpers
+    - `uiHelpers.js` - UI management utilities
+    - `domHelpers.js` - DOM manipulation utilities
+- `server/` - Proxy server implementation
 - `env.js` - Environment configuration
 
 ### Building for Development
