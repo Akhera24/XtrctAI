@@ -2090,3 +2090,171 @@ button {
 [data-theme="dark"] .api-test-results {
   background-color: var(--x-dark-gray);
 }
+
+/* Add these styles for the rate limit status UI components */
+
+.rate-limit-status {
+  margin-top: 12px;
+  padding: 12px;
+  background-color: #f7f9fa;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.status-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.status-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.status-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.status-actions button {
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid #cfd9de;
+  background-color: #fff;
+  color: #536471;
+  cursor: pointer;
+  transition: background-color 0.2s, color 0.2s;
+}
+
+.status-actions button:hover {
+  background-color: #f7f9fa;
+  color: #0f1419;
+}
+
+.status-actions button:active {
+  background-color: #e6ecf0;
+}
+
+.status-actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.status-actions button.danger-button {
+  border-color: #ffcccb;
+  color: #e0245e;
+}
+
+.status-actions button.danger-button:hover {
+  background-color: #ffeeee;
+}
+
+.status-indicator {
+  margin-top: 8px;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 100px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.status-badge.success {
+  background-color: #e1f7e3;
+  color: #17a81a;
+}
+
+.status-badge.warning {
+  background-color: #fff8e6;
+  color: #f59b00;
+}
+
+.status-badge.error {
+  background-color: #ffecec;
+  color: #e0245e;
+}
+
+/* Toast notifications */
+.toast {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%) translateY(100px);
+  padding: 10px 16px;
+  border-radius: 8px;
+  background-color: #1d9bf0;
+  color: white;
+  font-size: 14px;
+  font-weight: 500;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  opacity: 0;
+  transition: transform 0.3s ease, opacity 0.3s ease;
+}
+
+.toast.show {
+  transform: translateX(-50%) translateY(0);
+  opacity: 1;
+}
+
+.toast.error {
+  background-color: #e0245e;
+}
+
+.toast.success {
+  background-color: #17a81a;
+}
+
+.toast.info {
+  background-color: #1d9bf0;
+}
+
+/* Loading overlay */
+.loading-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(255, 255, 255, 0.8);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+
+.loading-overlay.visible {
+  opacity: 1;
+  pointer-events: all;
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid #f3f3f3;
+  border-top: 4px solid #1d9bf0;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 16px;
+}
+
+.loading-message {
+  font-size: 14px;
+  font-weight: 500;
+  color: #536471;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}

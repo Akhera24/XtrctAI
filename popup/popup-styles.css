@@ -1,0 +1,179 @@
+/* API Warning Banner */
+.api-warning-banner {
+  display: flex;
+  align-items: center;
+  background-color: #FEF6E6;
+  border: 1px solid #F9D59A;
+  border-radius: 4px;
+  padding: 8px 12px;
+  margin: 8px 0;
+  font-size: 14px;
+  color: #8B6F3B;
+}
+
+.api-warning-banner .warning-icon {
+  margin-right: 8px;
+  font-size: 18px;
+}
+
+.api-warning-banner .warning-message {
+  flex-grow: 1;
+  font-weight: normal;
+}
+
+.api-warning-banner .warning-close {
+  margin-left: 8px;
+  cursor: pointer;
+  font-size: 20px;
+  color: #CDB185;
+  transition: color 0.2s ease;
+}
+
+.api-warning-banner .warning-close:hover {
+  color: #8B6F3B;
+}
+
+/* API Error Banner */
+.api-error-banner {
+  display: flex;
+  align-items: center;
+  background-color: #FEEDEE;
+  border: 1px solid #F9A8A8;
+  border-radius: 4px;
+  padding: 8px 12px;
+  margin: 8px 0;
+  font-size: 14px;
+  color: #B73A3A;
+}
+
+.api-error-banner .error-icon {
+  margin-right: 8px;
+  font-size: 18px;
+}
+
+.api-error-banner .error-message {
+  flex-grow: 1;
+  font-weight: normal;
+}
+
+.api-error-banner .error-close {
+  margin-left: 8px;
+  cursor: pointer;
+  font-size: 20px;
+  color: #E67575;
+  transition: color 0.2s ease;
+}
+
+.api-error-banner .error-close:hover {
+  color: #B73A3A;
+}
+
+/* Progress Indicator */
+.progress-container {
+  width: 100%;
+  height: 4px;
+  background-color: #F2F2F2;
+  border-radius: 2px;
+  margin: 8px 0;
+  overflow: hidden;
+}
+
+.progress-bar {
+  height: 100%;
+  background-color: #1DA1F2;
+  transition: width 0.3s ease;
+}
+
+.progress-bar.error {
+  background-color: #E0245E;
+}
+
+.progress-bar.warning {
+  background-color: #FFAD1F;
+}
+
+/* Status Indicators */
+.status-indicator {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 6px;
+}
+
+.status-indicator.success {
+  background-color: #17BF63;
+}
+
+.status-indicator.warning {
+  background-color: #FFAD1F;
+}
+
+.status-indicator.error {
+  background-color: #E0245E;
+}
+
+.status-indicator.neutral {
+  background-color: #657786;
+}
+
+/* Recovery Mode Indicator */
+.recovery-mode-badge {
+  display: inline-block;
+  background-color: #FFAD1F;
+  color: #000;
+  font-size: 11px;
+  font-weight: bold;
+  padding: 2px 6px;
+  border-radius: 10px;
+  margin-left: 8px;
+}
+
+/* Fallback Data Indicator */
+.fallback-data-badge {
+  display: inline-block;
+  background-color: #657786;
+  color: #fff;
+  font-size: 11px;
+  font-weight: bold;
+  padding: 2px 6px;
+  border-radius: 10px;
+  margin-left: 8px;
+}
+
+/* Error notification overlay */
+.error-notification {
+  position: fixed;
+  top: 10px;
+  right: 10px;
+  background-color: #FEEDEE;
+  border: 1px solid #F9A8A8;
+  border-radius: 4px;
+  padding: 10px 15px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  z-index: 9999;
+  max-width: 350px;
+  animation: slideIn 0.3s ease-out;
+}
+
+.error-notification .title {
+  font-weight: bold;
+  margin-bottom: 5px;
+  color: #B73A3A;
+}
+
+.error-notification .message {
+  font-size: 14px;
+  color: #333;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+} 

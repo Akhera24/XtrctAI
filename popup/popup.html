@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="../styles/popup.css">
   <link rel="stylesheet" href="../styles/animations.css">
   <link rel="stylesheet" href="../styles/icon-styles.css">
+  <link rel="stylesheet" href="../styles/api-status.css">
   
   <!-- Critical overrides for UI fixes -->
   <style>
@@ -166,30 +167,33 @@
     }
     
     /* Cancel button in loading overlay */
-    .cancel-analysis-button {
-      background-color: rgba(255, 255, 255, 0.2);
-      color: white;
-      border: 1px solid rgba(255, 255, 255, 0.5);
-      padding: 6px 16px;
+    .cancel-button {
       margin-top: 12px;
-      border-radius: 20px;
+      padding: 8px 16px;
+      background-color: rgba(255, 255, 255, 0.2);
+      border: 1px solid rgba(255, 255, 255, 0.4);
+      color: white;
+      border-radius: 16px;
       cursor: pointer;
-      font-size: 14px;
+      font-size: 13px;
       transition: background-color 0.2s;
     }
     
-    .cancel-analysis-button:hover {
+    .cancel-button:hover {
       background-color: rgba(255, 255, 255, 0.3);
     }
     
-    [data-theme="dark"] .cancel-analysis-button {
-      border-color: #fff;
-      color: #fff;
+    .cancel-button:active {
+      background-color: rgba(255, 255, 255, 0.4);
     }
     
-    [data-theme="light"] .cancel-analysis-button {
-      border-color: #1d9bf0;
-      color: #1d9bf0;
+    [data-theme="dark"] .cancel-button {
+      background-color: rgba(0, 0, 0, 0.2);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+    
+    [data-theme="dark"] .cancel-button:hover {
+      background-color: rgba(0, 0, 0, 0.3);
     }
     
     /* Character counter */
@@ -690,13 +694,14 @@
     <!-- Loading Overlay -->
     <div class="loading-overlay hidden">
       <div class="loading-content">
+        <div class="loading-spinner"></div>
+        <p class="loading-text">Analyzing profile...</p>
         <div class="progress-container">
           <div class="progress-track">
-            <div class="progress-bar" style="width: 0%"></div>
+            <div class="progress-fill" style="width: 0%"></div>
           </div>
         </div>
-        <p class="loading-text">Analyzing profile...</p>
-        <button id="cancel-loading" class="cancel-analysis-button">Cancel</button>
+        <button class="cancel-button">Cancel</button>
       </div>
     </div>
 
@@ -736,6 +741,8 @@
   </div>
 
   <!-- Scripts -->
+  <script src="../scripts/utils/domHelpers.js"></script>
+  <script src="../scripts/utils/uiHelpers.js"></script>
   <script type="module" src="../scripts/directHandler.js"></script>
   <script type="module" src="../scripts/debugTools.js"></script>
 </body>
