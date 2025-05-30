@@ -1,24 +1,22 @@
 // Enhanced X API client for robust profile fetching with fallbacks
 class XApiClient {
   constructor(configs) {
-    this.configs = configs || {};
+    this.configs = configs || [];
     this.currentConfigIndex = 0;
-    this.retryLimit = 3;
-    this.cacheExpiry = 30 * 60 * 1000; // 30 minutes
-    this.cache = new Map();
-    this.lastErrorTimestamp = 0;
-    this.consecutiveErrors = 0;
-    this.errorRecoveryTime = 60000; // 1 minute wait after consecutive errors
-    this.tokenValidationTime = 0;
     this.isTokenValid = false;
     
-    // Add token pool management
+    // Token management
     this.tokenPool = this.initializeTokenPool();
-    this.rateLimitedTokens = new Map(); // Store rate limited tokens with reset times
+    this.rateLimitedTokens = new Map(); // token -> reset time
+    this.invalidTokens = new Set();
     
-    // Initialize with a longer backoff time for rate limits
-    this.baseBackoffTime = 2000; // 2 seconds base
-    this.maxBackoffTime = 30000; // 30 seconds max
+    // Request retry logic
+    this.retryLimit = 3;
+    this.baseBackoffTime = 1000; // 1 second initial backoff
+    this.maxBackoffTime = 60000; // 1 minute max backoff
+    this.consecutiveErrors = 0;
+    
+    console.log(`API client initialized with ${this.configs.length} configurations and ${this.tokenPool.length} tokens`);
   }
 
   // Initialize token pool from configs
@@ -278,63 +276,26 @@ class XApiClient {
       }
     }
     
-    // Before trying API requests, attempt to refresh tokens
-    // This can help if all tokens are invalid or expired
-    try {
-      console.log(`[${requestId}] Refreshing and validating tokens`);
-      const validTokens = await this.refreshAndValidateTokens();
-      if (!validTokens) {
-        console.error(`[${requestId}] No valid tokens available, falling back to cache or generated data`);
-        
-        // Try to get expired cache data as fallback
-        try {
-          const expiredCache = this.getFromCache(username, true);
-          if (expiredCache) {
-            console.log(`[${requestId}] Using expired cache for ${username} as all tokens are invalid`);
-            return {
-              success: true,
-              ...expiredCache,
-              fromCache: true,
-              cacheExpired: true,
-              warning: 'Using expired cached data as no valid API tokens available'
-            };
-          }
-        } catch (expiredCacheError) {
-          console.warn(`[${requestId}] Failed to get expired cache:`, expiredCacheError);
-        }
-        
-        // If no cache either, return generated fallback data
-        return this.generateFallbackData(username, new Error('No valid API tokens available'));
-      }
-    } catch (tokenError) {
-      console.error(`[${requestId}] Error refreshing tokens:`, tokenError);
-      // Continue anyway, we might still be able to use an existing config
-    }
-    
     // Setup for retry mechanism
     let retries = 0;
     let lastError = null;
     
     // Try multiple configurations with retries
     while (retries < this.retryLimit * this.configs.length) {
-      const config = this.getCurrentConfig();
+      const config = await this.rotateConfig(); // Await to handle potential promise from token rotation
       
       try {
         console.log(`[${requestId}] Attempting to fetch ${username} with config #${this.currentConfigIndex + 1}, retry ${retries + 1}`);
         
-        // Validate token before making the request
-        const isValid = await this.validateToken(config);
-        if (!isValid) {
-          console.warn(`[${requestId}] Token validation failed, rotating config...`);
-          this.rotateConfig();
-          retries++;
-          continue;
-        }
-        
         // First get the user ID using our safe fetch method
         console.log(`[${requestId}] Fetching user data for ${username}`);
-        const userLookupPath = `users/by/username/${username}?user.fields=public_metrics,description,profile_image_url,verified`;
-        const userData = await this.safeApiFetch(userLookupPath, config);
+        const userLookupPath = `users/by/username/${username}?user.fields=public_metrics,description,profile_image_url,verified,created_at`;
+        
+        // Import auth handler
+        const { makeAuthenticatedRequest } = await import('./auth-handler.js');
+        
+        // Use the imported method for authentication
+        const userData = await makeAuthenticatedRequest(userLookupPath);
         
         if (!userData || !userData.data) {
           console.warn(`[${requestId}] User data missing for ${username}`);
@@ -346,7 +307,7 @@ class XApiClient {
         const userId = userData.data.id;
         const tweetsPath = `users/${userId}/tweets?max_results=10&tweet.fields=public_metrics,created_at,entities&expansions=attachments.media_keys`;
         
-        const tweetsData = await this.safeApiFetch(tweetsPath, config);
+        const tweetsData = await makeAuthenticatedRequest(tweetsPath);
         
         // Calculate analytics from the tweet data
         console.log(`[${requestId}] Generating analytics for ${username}`);
@@ -386,28 +347,12 @@ class XApiClient {
       } catch (error) {
         console.error(`[${requestId}] Error fetching data for ${username} with config #${this.currentConfigIndex + 1}:`, error);
         
-        // Check if this is a rate limit error
-        if (error.message && (
-            error.message.includes('rate limit') || 
-            error.message.includes('429') || 
-            error.message.includes('Too Many Requests')
-        )) {
-          console.warn(`[${requestId}] Rate limit hit on config #${this.currentConfigIndex + 1}, rotating to next config`);
-          // Store the rate limit info if available
-          if (error.rateLimitReset) {
-            console.log(`[${requestId}] Rate limit resets at: ${new Date(error.rateLimitReset).toLocaleTimeString()}`);
-          }
-        }
-        
         lastError = error;
         retries++;
         
         // Increment consecutive error counter and update timestamp
         this.consecutiveErrors++;
         this.lastErrorTimestamp = Date.now();
-        
-        // If this config failed, try the next one
-        this.rotateConfig();
         
         // Exponential backoff before retry
         const backoffTime = Math.min(1000 * Math.pow(2, retries - 1), 8000);
@@ -419,302 +364,50 @@ class XApiClient {
     // All attempts failed, try to return fallback data
     console.warn(`[${requestId}] All API attempts failed for ${username}, returning fallback data`);
     
-    // Check if we have expired cache data as a fallback
-    try {
-      const expiredCache = this.getFromCache(username, true);
-      if (expiredCache) {
-        console.log(`[${requestId}] Using expired cache for ${username} as fallback`);
-        return {
-          success: true,
-          ...expiredCache,
-          fromCache: true,
-          cacheExpired: true,
-          warning: 'Using expired cached data as API requests failed'
-        };
-      }
-    } catch (expiredCacheError) {
-      console.warn(`[${requestId}] Failed to get expired cache as fallback:`, expiredCacheError);
-    }
-    
     // If no cache either, return generated fallback data
     console.log(`[${requestId}] Generating fallback data as last resort`);
     return this.generateFallbackData(username, lastError);
   }
 
-  // Helper to make authenticated API requests with better error handling
-  async makeAuthenticatedRequestWithRetry(url, config, retryCount = 0) {
-    try {
-      // Wrap the request in a function to pass to retryWithBackoff
-      const requestFn = async () => {
-        try {
-          return await this.makeAuthenticatedRequest(url, config);
-        } catch (error) {
-          // Handle 401 unauthorized errors - definitely an expired token
-          if (error.message && (error.message.includes('401') || error.message.includes('unauthorized'))) {
-            console.warn(`Authorization error detected. Rotating API config immediately.`);
-            this.isTokenValid = false;
-            
-            // Update token status in pool
-            const tokenIndex = this.tokenPool.findIndex(t => t.config === config);
-            if (tokenIndex >= 0) {
-              const token = this.tokenPool[tokenIndex];
-              token.status = 'invalid';
-              token.consecutiveFailures++;
-            }
-            
-            await this.rotateConfig();
-            
-            // For auth errors, don't retry with backoff, just try next config
-            const newConfig = this.getCurrentConfig();
-            return await this.makeAuthenticatedRequest(url, newConfig);
-          }
-          
-          // For rate limit errors, properly mark them for the backoff handler
-          if (error.message && (
-              error.message.includes('rate limit') || 
-              error.message.includes('429') || 
-              error.message.includes('Too Many Requests')
-          )) {
-            error.isRateLimit = true;
-            
-            // Handle rate limit if we have reset info
-            if (error.rateLimitReset) {
-              await this.handleRateLimit(error.rateLimitReset);
-            }
-          }
-          
-          throw error;
-        }
-      };
-      
-      // Use the enhanced retryWithBackoff function with our request
-      return await this.retryWithBackoff(requestFn, this.retryLimit, this.baseBackoffTime);
-    } catch (error) {
-      console.error(`All retry attempts failed for ${url}:`, error);
-      throw error;
-    }
-  }
-  
   // Safely fetch API data with error handling and retries
   async safeApiFetch(urlPath, config = null) {
     // Use provided config or current config
     const apiConfig = config || this.getCurrentConfig();
     
-    // Ensure we have a base URL
-    const baseUrl = apiConfig.baseUrl || apiConfig.API_BASE_URL || 'https://api.twitter.com/2';
-    
-    // Build full URL
-    const fullUrl = urlPath.startsWith('http') ? urlPath : `${baseUrl}/${urlPath.startsWith('/') ? urlPath.substring(1) : urlPath}`;
-    
-    // Process URL to ensure valid parameters
-    const urlObj = new URL(fullUrl);
-    const endpoint = urlObj.pathname;
-    
-    // Add appropriate fields based on endpoint type if not already present
-    if (endpoint.includes('/users/by/username/')) {
-      if (!urlObj.searchParams.has('user.fields') && !urlPath.includes('user.fields=')) {
-        urlObj.searchParams.append('user.fields', 'description,profile_image_url,verified,public_metrics');
-      }
-    } else if (endpoint.includes('/tweets')) {
-      if (!urlObj.searchParams.has('tweet.fields') && !urlPath.includes('tweet.fields=')) {
-        urlObj.searchParams.append('tweet.fields', 'created_at,public_metrics');
-      }
-    }
-    
-    // Use the processed URL
-    const processedUrl = urlObj.toString();
-    
     try {
-      // First try with direct API call
-      try {
-        return await this.makeAuthenticatedRequestWithRetry(processedUrl, apiConfig);
-      } catch (directError) {
-        console.warn('Direct API call failed, trying proxy:', directError);
-        
-        // Try proxy if direct call fails
-        try {
-          // Dynamically import the proxy client
-          const { proxyClient } = await import('./proxy-client.js');
+      // Process the URL path to handle both relative and absolute URLs
+      const processedUrl = urlPath.startsWith('http') 
+        ? urlPath 
+        : `${apiConfig.baseUrl || 'https://api.twitter.com/2'}/${urlPath.replace(/^\//, '')}`;
+      
+      // Use our improved auth handler via makeAuthenticatedRequest
+      const { makeAuthenticatedRequest } = await import('./auth-handler.js');
           
-          // Check if proxy is available
-          if (await proxyClient.isAvailable()) {
-            console.log('Using proxy for request:', processedUrl);
-            
-            // Use the proxy client's authenticated request method
-            return await proxyClient.makeAuthenticatedRequest(processedUrl, apiConfig);
-          } else {
-            console.warn('Proxy server is not available');
-            throw new Error('Proxy server is not available');
-          }
-        } catch (proxyError) {
-          console.error('Proxy request also failed:', proxyError);
-          
-          // Add context for better debugging
-          directError.context = {
-            ...directError.context,
-            proxyAttempted: true,
-            proxyError: proxyError.message
-          };
-          
-          // Throw the original error
-          throw directError;
+      // Directly use the better auth-handler implementation
+      return await makeAuthenticatedRequest(processedUrl, {
+        params: {
+          // Add common params for better data
+          'tweet.fields': 'public_metrics,created_at,entities',
+          'user.fields': 'public_metrics,description,profile_image_url,verified,created_at',
+          'expansions': 'author_id,attachments.media_keys'
         }
-      }
+      });
     } catch (error) {
-      console.error(`All API request attempts failed for ${processedUrl}:`, error);
+      console.error(`API fetch error for ${urlPath}:`, error);
       
-      // Add error context for better debugging
-      error.context = {
-        ...(error.context || {}),
-        url: processedUrl,
-        configIndex: this.currentConfigIndex,
-        timestamp: Date.now()
-      };
-      
-      throw error;
-    }
-  }
-
-  // Helper to make authenticated API requests
-  async makeAuthenticatedRequest(url, config) {
-    // Determine the bearer token to use
-    const bearerToken = config.bearerToken || config.BEARER_TOKEN;
-    
-    if (!bearerToken) {
-      console.error('No bearer token available for API request');
-      throw new Error('Authentication configuration is missing or invalid');
-    }
-    
-    const headers = {
-      'Authorization': `Bearer ${bearerToken}`,
-      'Content-Type': 'application/json',
-      'User-Agent': 'X-Analyzer-Extension/1.0',
-      'Cache-Control': 'no-cache, no-store',
-      'Pragma': 'no-cache'
-    };
-    
-    const options = {
-      method: 'GET',
-      headers: headers,
-      redirect: 'follow',
-      mode: 'cors',
-      cache: 'no-store',
-      credentials: 'omit'
-    };
-    
-    // Process URL to ensure valid parameters
-    const urlObj = new URL(url);
-    
-    // Add appropriate fields based on endpoint type
-    const endpoint = urlObj.pathname;
-    if (endpoint.includes('/users/by/username/')) {
-      // For user lookup endpoints, add valid fields if not already present
-      if (!urlObj.searchParams.has('user.fields')) {
-        urlObj.searchParams.append('user.fields', 'description,profile_image_url,verified,public_metrics');
-      }
-    } else if (endpoint.includes('/tweets')) {
-      // For tweet endpoints, add tweet fields if not present
-      if (!urlObj.searchParams.has('tweet.fields')) {
-        urlObj.searchParams.append('tweet.fields', 'created_at,public_metrics');
-      }
-    }
-    
-    const finalUrl = urlObj.toString();
-    console.log(`Making request to: ${finalUrl}`);
-    
-    try {
-      const response = await fetch(finalUrl, options);
-      
-      // Process rate limits from headers for monitoring
-      this.processRateLimits(response);
-      
-      if (!response.ok) {
-        let errorMessage = `HTTP error ${response.status}`;
-        let rateLimitReset = null;
+      // Handle rate limits specially
+      if (error.status === 429 || (error.message && error.message.includes('rate limit'))) {
+        // Get reset time from error or set a default
+        const resetTime = error.rateLimitReset || (Date.now() + 15 * 60 * 1000);
+        const resetDate = new Date(resetTime);
         
-        // Handle rate limit errors specifically
-        if (response.status === 429) {
-          rateLimitReset = parseInt(response.headers.get('x-rate-limit-reset') || '0') * 1000;
-          const resetDate = new Date(rateLimitReset);
-          errorMessage = `Rate limit exceeded. Resets at ${resetDate.toLocaleTimeString()}`;
-        }
+        console.warn(`Rate limited until ${resetDate.toLocaleTimeString()}`);
         
-        try {
-          const errorData = await response.json();
-          errorMessage = errorData.errors?.[0]?.message || errorMessage;
-          
-          // Handle special error cases
-          if (errorData.errors?.[0]?.value) {
-            // Handle username format errors
-            if (errorMessage.includes('username')) {
-              errorMessage = `The username "${errorData.errors[0].value}" does not match the required format`;
-            }
-          }
-        } catch (e) {
-          // If we can't parse the error JSON, use the status text
-          errorMessage = `${errorMessage}: ${response.statusText}`;
-        }
-        
-        // Mark token as invalid for 401 errors
-        if (response.status === 401) {
-          this.isTokenValid = false;
-        }
-        
-        // Create the error
-        const error = new Error(errorMessage);
-        
-        // Add rate limit info if applicable
-        if (rateLimitReset) {
-          error.rateLimitReset = rateLimitReset;
+        error.rateLimitReset = resetTime;
           error.isRateLimit = true;
         }
         
         throw error;
-      }
-      
-      return await response.json();
-    } catch (error) {
-      console.error(`API request failed: ${error.message}`);
-      throw error;
-    }
-  }
-  
-  // Process rate limits from response headers
-  processRateLimits(response) {
-    try {
-      const remaining = response.headers.get('x-rate-limit-remaining');
-      const reset = response.headers.get('x-rate-limit-reset');
-      const limit = response.headers.get('x-rate-limit-limit');
-      
-      if (remaining || reset || limit) {
-        console.log(`API Rate Limits - Remaining: ${remaining}, Reset: ${reset}, Limit: ${limit}`);
-        
-        // Store the latest rate limit info
-        this.rateLimits = {
-          remaining: parseInt(remaining) || 0,
-          reset: (parseInt(reset) || Math.floor(Date.now() / 1000) + 900) * 1000, // Convert to ms, default 15 min
-          limit: parseInt(limit) || 300,
-          timestamp: Date.now()
-        };
-        
-        // Update token in pool
-        const token = this.tokenPool[this.currentConfigIndex];
-        if (token) {
-          // Mark token's last used time
-          token.lastUsed = Date.now();
-          
-          // If we're close to the rate limit, pre-emptively mark as limited
-          if (parseInt(remaining) <= 5 && reset) {
-            const resetTime = parseInt(reset) * 1000;
-            console.log(`Token #${this.currentConfigIndex + 1} is close to rate limit (${remaining} remaining). Preparing for rotation.`);
-            
-            // Don't mark as rate limited yet, but prepare for it
-            token.rateLimitReset = resetTime;
-          }
-        }
-      }
-    } catch (e) {
-      console.warn('Failed to process rate limits:', e);
     }
   }
 
@@ -1056,10 +749,24 @@ class XApiClient {
   }
 
   // Generate fallback data when API calls fail
-  generateFallbackData(username, error) {
+  async generateFallbackData(username, error) {
     console.log(`Generating fallback data for ${username} due to: ${error?.message}`);
     
-    // Create user object with estimated metrics
+    try {
+      // Import the fallback generator module dynamically
+      const { generateFallbackProfile } = await import('./fallback-generator.js');
+      
+      // Use the proper fallback generator
+      const fallbackData = generateFallbackProfile(username);
+      
+      // Add the error information
+      fallbackData.warning = error?.message || 'API data unavailable';
+      
+      return fallbackData;
+    } catch (fallbackError) {
+      console.error(`Failed to use fallback generator, using basic fallback: ${fallbackError}`);
+      
+      // Create user object with estimated metrics as a last resort
     const followers = Math.floor(Math.random() * 5000) + 500;
     const following = Math.floor(Math.random() * 2000) + 200;
     const tweetCount = Math.floor(Math.random() * 15000) + 1000;
@@ -1129,6 +836,7 @@ class XApiClient {
       warning: error?.message || 'API data unavailable',
       timestamp: Date.now()
     };
+    }
   }
 
   // Gets the currently active API configuration
@@ -1136,58 +844,158 @@ class XApiClient {
     return this.configs[this.currentConfigIndex];
   }
 
-  // Enhanced retryWithBackoff function with better rate limit handling
-  async retryWithBackoff(requestFn, maxRetries = 3, initialDelayMs = 2000) {
-    let lastError;
+  // Process rate limits from response headers
+  processRateLimits(response, token) {
+    if (!response || !response.headers) return;
     
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      try {
-        if (attempt > 0) {
-          console.log(`Retry attempt ${attempt}/${maxRetries}...`);
-        }
+    const rateLimitRemaining = parseInt(response.headers.get('x-rate-limit-remaining'), 10);
+    const rateLimitReset = parseInt(response.headers.get('x-rate-limit-reset'), 10) * 1000; // Convert to ms
+    
+    // If rate limited, store the token with its reset time
+    if (rateLimitRemaining !== undefined && rateLimitRemaining <= 1) {
+      if (rateLimitReset && !isNaN(rateLimitReset)) {
+        console.log(`Token ${token.substring(0, 8)}... rate limited until ${new Date(rateLimitReset).toISOString()}`);
+        this.rateLimitedTokens.set(token, rateLimitReset);
+      } else {
+        // If no reset time available, assume 15 minutes
+        const resetTime = Date.now() + 15 * 60 * 1000;
+        this.rateLimitedTokens.set(token, resetTime);
+      }
+    }
+  }
+
+  // Make authenticated request with rate limit awareness and retry capability
+  async makeAuthenticatedRequestWithRetry(endpoint, options = {}, retryCount = 0) {
+    // Get a non-rate-limited token
+    const bearerToken = await this.getValidToken();
+    if (!bearerToken) {
+      throw new Error('No valid tokens available');
+    }
+    
+    try {
+      const response = await this.makeAuthenticatedRequest(endpoint, bearerToken, options);
+      
+      // Process rate limits from response
+      this.processRateLimits(response, bearerToken);
+      
+      // Check if response is ok
+      if (!response.ok) {
+        const errorText = await response.text();
+        const errorInfo = {
+          status: response.status,
+          statusText: response.statusText,
+          body: errorText,
+        };
         
-        // Get the best available token before each attempt
-        if (attempt > 0) {
-          await this.rotateConfig();
-        }
-        
-        return await requestFn();
-      } catch (error) {
-        lastError = error;
-        
-        // If this isn't a rate limit error or we've used all retries, throw
-        if (!error.isRateLimit || attempt >= maxRetries) {
-          throw error;
-        }
-        
-        // Calculate backoff time with exponential increase and some jitter
-        const jitter = Math.random() * 0.3 + 0.85; // Random value between 0.85 and 1.15
-        const delayMs = Math.min(
-          initialDelayMs * Math.pow(2, attempt) * jitter,
-          this.maxBackoffTime
-        );
-        
-        console.log(`Rate limit hit. Backing off for ${Math.round(delayMs / 1000)} seconds...`);
-        
-        // If we have a reset time in the error, use that instead if it's sooner
-        if (error.rateLimitReset) {
-          const resetTimeMs = error.rateLimitReset;
-          const timeUntilReset = resetTimeMs - Date.now();
+        // Handle rate limiting
+        if (response.status === 429) {
+          console.log(`Rate limit hit for ${endpoint}. Retrying with different token.`);
+          this.rateLimitedTokens.set(bearerToken, Date.now() + 15 * 60 * 1000); // Mark as rate limited
           
-          if (timeUntilReset > 0 && timeUntilReset < delayMs) {
-            console.log(`Using rate limit reset time instead: ${Math.round(timeUntilReset / 1000)} seconds`);
-            await new Promise(resolve => setTimeout(resolve, timeUntilReset + 1000)); // Add 1 second buffer
-            continue;
+          if (retryCount < this.retryLimit) {
+            const backoffTime = Math.min(this.baseBackoffTime * Math.pow(2, retryCount), this.maxBackoffTime);
+            await new Promise(resolve => setTimeout(resolve, backoffTime));
+            return this.makeAuthenticatedRequestWithRetry(endpoint, options, retryCount + 1);
           }
         }
         
-        // Wait for the calculated delay
-        await new Promise(resolve => setTimeout(resolve, delayMs));
+        // Handle authentication errors
+        if (response.status === 401) {
+          console.log(`Authentication error for token ${bearerToken.substring(0, 8)}...`);
+          // Mark this token as invalid
+          this.invalidTokens = this.invalidTokens || new Set();
+          this.invalidTokens.add(bearerToken);
+          
+          if (retryCount < this.retryLimit) {
+            const backoffTime = Math.min(this.baseBackoffTime * Math.pow(2, retryCount), this.maxBackoffTime);
+            await new Promise(resolve => setTimeout(resolve, backoffTime));
+            return this.makeAuthenticatedRequestWithRetry(endpoint, options, retryCount + 1);
+          }
+        }
+        
+        throw new Error(`API request failed: ${JSON.stringify(errorInfo)}`);
+      }
+      
+      // Reset error tracking on successful request
+      this.consecutiveErrors = 0;
+      
+      return response.json();
+    } catch (error) {
+      console.error(`Error making authenticated request: ${error.message}`);
+      this.consecutiveErrors++;
+      
+      // Apply exponential backoff for retries
+      if (retryCount < this.retryLimit) {
+        const backoffTime = Math.min(this.baseBackoffTime * Math.pow(2, retryCount), this.maxBackoffTime);
+        console.log(`Retrying request to ${endpoint} after ${backoffTime}ms (attempt ${retryCount + 1}/${this.retryLimit})`);
+        await new Promise(resolve => setTimeout(resolve, backoffTime));
+        return this.makeAuthenticatedRequestWithRetry(endpoint, options, retryCount + 1);
+      }
+      
+      throw error;
+    }
+  }
+  
+  // Base authenticated request
+  async makeAuthenticatedRequest(endpoint, bearerToken, options = {}) {
+    const baseUrl = 'https://api.twitter.com/2';
+    const url = `${baseUrl}${endpoint}`;
+    
+    const headers = {
+      'Authorization': `Bearer ${bearerToken}`,
+      'Content-Type': 'application/json',
+      ...options.headers,
+    };
+    
+    return fetch(url, {
+      method: options.method || 'GET',
+      headers,
+      body: options.body ? JSON.stringify(options.body) : undefined,
+    });
+  }
+  
+  // Get a valid token from the pool, avoiding rate-limited ones
+  async getValidToken() {
+    // Clear expired rate limits
+    const now = Date.now();
+    for (const [token, resetTime] of this.rateLimitedTokens.entries()) {
+      if (resetTime < now) {
+        this.rateLimitedTokens.delete(token);
       }
     }
     
-    // We should never reach here due to the throw in the loop, but just in case
-    throw lastError;
+    // Find a token that's not rate limited
+    const availableTokens = this.tokenPool.filter(token => 
+      !this.rateLimitedTokens.has(token) && 
+      !(this.invalidTokens && this.invalidTokens.has(token))
+    );
+    
+    if (availableTokens.length === 0) {
+      // If all tokens are rate limited, find the one that will reset soonest
+      let earliestReset = Infinity;
+      let bestToken = null;
+      
+      for (const [token, resetTime] of this.rateLimitedTokens.entries()) {
+        if (resetTime < earliestReset) {
+          earliestReset = resetTime;
+          bestToken = token;
+        }
+      }
+      
+      // If we found a token that will reset soon, wait for it
+      if (bestToken && (earliestReset - now < 10000)) { // If reset is less than 10 seconds away
+        console.log(`Waiting ${(earliestReset - now)/1000}s for token to become available`);
+        await new Promise(resolve => setTimeout(resolve, earliestReset - now + 100));
+        this.rateLimitedTokens.delete(bestToken);
+        return bestToken;
+      }
+      
+      console.error('No valid tokens available and none will reset soon');
+      return null;
+    }
+    
+    // Return a random available token to distribute load
+    return availableTokens[Math.floor(Math.random() * availableTokens.length)];
   }
 }
 

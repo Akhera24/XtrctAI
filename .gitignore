@@ -115,3 +115,29 @@ docs/
 .husky/
 .prettierignore
 .eslintignore
+
+# Backup and temporary files
+*.backup
+*.old
+*.bak
+*.backup2
+*.broken
+*-backup.js
+popup/popup-original.js.backup
+popup/popup.js.backup
+popup/popup.js.backup2
+popup/popup.js.broken
+popup/popup.js.old
+popup/popup-backup.js
+
+# Temporary fix scripts
+fix-*.sh
+fix-*.js
+*-fix.js
+emergency-fix.js
+popup-auto-fix.js
+
+# Node modules and build artifacts
+node_modules/
+dist/
+.DS_Store

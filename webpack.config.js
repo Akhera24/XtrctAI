@@ -20,7 +20,7 @@ module.exports = {
   entry: {
     background: './scripts/background.js', // Background service worker
     content: './scripts/content.js',       // Content script injected into pages
-    popup: './popup/popup.js',            // Extension popup UI
+    popup: './popup/popup.js',            // Extension popup UI (enhanced version)
     grokService: './scripts/grokService.js' // Grok AI integration service
   },
 

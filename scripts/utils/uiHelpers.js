@@ -194,19 +194,4 @@ window.showToast = uiHelpers.showToast.bind(uiHelpers);
 window.dismissToast = uiHelpers.dismissToast.bind(uiHelpers);
 window.updateProgress = uiHelpers.updateProgress.bind(uiHelpers);
 window.showLoading = uiHelpers.showLoading.bind(uiHelpers);
-window.hideLoading = uiHelpers.hideLoading.bind(uiHelpers);
-
-// Export for ES modules - wrapped in try/catch to avoid errors in non-module contexts
-try {
-  if (typeof module !== 'undefined' && module.exports) {
-    // CommonJS exports
-    module.exports = uiHelpers;
-    module.exports.showToast = uiHelpers.showToast.bind(uiHelpers);
-    module.exports.dismissToast = uiHelpers.dismissToast.bind(uiHelpers);
-    module.exports.updateProgress = uiHelpers.updateProgress.bind(uiHelpers);
-    module.exports.showLoading = uiHelpers.showLoading.bind(uiHelpers);
-    module.exports.hideLoading = uiHelpers.hideLoading.bind(uiHelpers);
-  }
-} catch (e) {
-  console.warn('ES module exports not supported in this context');
-} 
+window.hideLoading = uiHelpers.hideLoading.bind(uiHelpers); 

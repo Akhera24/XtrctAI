@@ -7,7 +7,7 @@
  * Cache common DOM elements for quick access
  * This helps prevent looking up elements multiple times
  */
-const domCache = {
+const xAnalyzerDomCache = {
   // Keep track of whether elements have been initialized
   initialized: false,
   
@@ -64,12 +64,12 @@ const domCache = {
  * @param {boolean|string} showOrMessage - true/false to show/hide, or message string
  */
 function toggleLoadingOverlay(showOrMessage = true) {
-  const overlay = domCache.get('loadingOverlay', '.loading-overlay');
+  const overlay = xAnalyzerDomCache.get('loadingOverlay', '.loading-overlay');
   if (!overlay) return;
   
   if (typeof showOrMessage === 'string') {
     // Update loading message
-    const loadingText = domCache.get('loadingText', '.loading-text');
+    const loadingText = xAnalyzerDomCache.get('loadingText', '.loading-text');
     if (loadingText) {
       loadingText.textContent = showOrMessage;
     }
@@ -151,28 +151,20 @@ function formatNumber(num) {
  * Add global references to make helpers available to window scope
  */
 // Make DOM cache available globally
-window.domCache = domCache;
-window.loadingOverlay = domCache.loadingOverlay;
-window.analyzeButton = domCache.analyzeButton;
-window.profileInput = domCache.profileInput;
+window.xAnalyzerDomCache = xAnalyzerDomCache;
+window.loadingOverlay = xAnalyzerDomCache.loadingOverlay;
+window.analyzeButton = xAnalyzerDomCache.analyzeButton;
+window.profileInput = xAnalyzerDomCache.profileInput;
 window.extractUsername = extractUsername;
 window.formatNumber = formatNumber;
 window.toggleLoadingOverlay = toggleLoadingOverlay;
 
 // Initialize DOM cache when the page is ready
 document.addEventListener('DOMContentLoaded', () => {
-  domCache.init();
+  xAnalyzerDomCache.init();
   
   // Update global references after initialization
-  window.loadingOverlay = domCache.loadingOverlay;
-  window.analyzeButton = domCache.analyzeButton;
-  window.profileInput = domCache.profileInput;
-});
-
-// Export for ES modules
-export {
-  domCache,
-  extractUsername,
-  formatNumber,
-  toggleLoadingOverlay
-}; 
+  window.loadingOverlay = xAnalyzerDomCache.loadingOverlay;
+  window.analyzeButton = xAnalyzerDomCache.analyzeButton;
+  window.profileInput = xAnalyzerDomCache.profileInput;
+}); 

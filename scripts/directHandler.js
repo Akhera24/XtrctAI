@@ -6,9 +6,54 @@
 // Global references for UI helpers and DOM elements
 let showToast, hideLoading, updateProgress, showLoading;
 let profileInput, analyzeButton, resultsContainer, loadingOverlay, progressBar;
-let isAnalyzing = false; // Track analysis state
-let progressInterval = null;
-let apiTimeout = null;
+let directHandlerAnalyzing = false; // Track analysis state locally
+let uniqueProgressInterval = null;
+let uniqueApiTimeout = null;
+let abortController = null; // For aborting API requests
+let profileAnalyzer = null; // Global reference to ProfileAnalyzer
+
+// Fallback ProfileAnalyzer implementation
+class ProfileAnalyzerFallback {
+  constructor() {
+    this.initialized = false;
+  }
+  
+  async initialize() {
+    this.initialized = true;
+    return true;
+  }
+  
+  async analyzeProfile(username, options = {}) {
+    console.log('Using fallback ProfileAnalyzer for', username);
+    
+    // Generate fallback data
+    return {
+      username: username,
+      displayName: username,
+      isFallbackData: true,
+      warning: 'Using fallback data - API unavailable',
+      analytics: {
+        metrics: {
+          followers: Math.floor(Math.random() * 10000) + 1000,
+          following: Math.floor(Math.random() * 1000) + 100,
+          tweets: Math.floor(Math.random() * 5000) + 500
+        },
+        engagement: {
+          rate: (Math.random() * 5 + 1).toFixed(1) + '%'
+        }
+      },
+      strategy: {
+        recommendations: [
+          'Post consistently to increase visibility',
+          'Engage with comments to build community',
+          'Use visual content for higher engagement',
+          'Participate in relevant conversations in your niche',
+          'Use trending hashtags when relevant to your content'
+        ]
+      }
+    };
+  }
+}
 
 // Setup helper functions before DOM is loaded
 document.addEventListener('DOMContentLoaded', function() {
@@ -24,11 +69,20 @@ document.addEventListener('DOMContentLoaded', function() {
   // Initialize UI helper references (before using them)
   setupUIHelpers();
   
+  // Initialize the profileAnalyzer by getting it from window.ProfileAnalyzer or creating a fallback
+  try {
+    if (window.ProfileAnalyzer) {
+      profileAnalyzer = window.ProfileAnalyzer;
+    } else {
+      profileAnalyzer = new ProfileAnalyzerFallback();
+    }
+  } catch (error) {
+    console.error('Error initializing profileAnalyzer:', error);
+    profileAnalyzer = new ProfileAnalyzerFallback();
+  }
+  
   // Initialize the UI
   initializeUI();
-  
-  // Setup tab navigation
-  setupTabNavigation();
   
   // Hide results container initially
   if (resultsContainer) {
@@ -39,12 +93,25 @@ document.addEventListener('DOMContentLoaded', function() {
   if (analyzeButton) {
     console.log('Setting up analyze button click handler');
     analyzeButton.addEventListener('click', handleAnalyzeClick);
+  } else {
+    console.error('Analyze button not found! Trying alternative selectors...');
+    const altButtons = document.querySelectorAll('button.analyze-button, button[data-action="analyze"], button:contains("Analyze")');
+    if (altButtons.length > 0) {
+      console.log(`Found ${altButtons.length} alternative analyze buttons`);
+      altButtons.forEach(btn => btn.addEventListener('click', handleAnalyzeClick));
+    }
   }
   
   // Set up test API button
-  const testApiButton = document.getElementById('test-api-button');
+  const testApiButton = document.getElementById('test-api-button') || document.querySelector('.test-api-button');
   if (testApiButton) {
     testApiButton.addEventListener('click', handleTestApiClick);
+  }
+  
+  // Setup cancel button handling in loading overlay
+  const cancelButton = document.querySelector('.loading-overlay .cancel-button');
+  if (cancelButton) {
+    cancelButton.addEventListener('click', cancelAnalysis);
   }
 });
 
@@ -52,32 +119,25 @@ document.addEventListener('DOMContentLoaded', function() {
 function setupUIHelpers() {
   // First log what's available to help with debugging
   console.log('Available UI helpers:', {
-    xUiHelpersAvailable: !!window.xUiHelpers,
+    xProfileAnalyzerAvailable: !!window.XProfileAnalyzer,
+    bridgeAvailable: !!window.XProfileAnalyzer?.UI,
     showToastAvailable: !!window.showToast,
     updateProgressAvailable: !!window.updateProgress,
     hideLoadingAvailable: !!window.hideLoading,
     showLoadingAvailable: !!window.showLoading
   });
   
-  // First try to get the helpers from the global xUiHelpers object
-  if (window.xUiHelpers) {
-    console.log('Using global xUiHelpers object');
-    showToast = function(message, type) {
-      window.xUiHelpers.showToast.call(window.xUiHelpers, message, type);
-    };
-    hideLoading = function() {
-      window.xUiHelpers.hideLoading.call(window.xUiHelpers);
-    };
-    updateProgress = function(selector, percent) {
-      window.xUiHelpers.updateProgress.call(window.xUiHelpers, selector, percent);
-    };
-    showLoading = function(message) {
-      window.xUiHelpers.showLoading.call(window.xUiHelpers, message);
-    };
+  // Try to get helpers from the XProfileAnalyzer namespace first (bridge.js)
+  if (window.XProfileAnalyzer && window.XProfileAnalyzer.UI) {
+    console.log('Using XProfileAnalyzer.UI helpers from bridge.js');
+    showToast = window.XProfileAnalyzer.UI.showToast;
+    hideLoading = window.XProfileAnalyzer.UI.hideLoading;
+    updateProgress = window.XProfileAnalyzer.UI.updateProgress;
+    showLoading = window.XProfileAnalyzer.UI.showLoading;
     return;
   }
   
-  // Fallback to individual global functions if available
+  // Fallback to direct global functions if available (also set by bridge.js)
   if (window.showToast && window.hideLoading && window.updateProgress && window.showLoading) {
     console.log('Using global UI helper functions');
     showToast = window.showToast;
@@ -89,14 +149,15 @@ function setupUIHelpers() {
 
   // Last resort fallbacks if no UI helpers are available
   console.warn('No UI helpers found, using basic fallbacks');
-  showToast = function(message, type) {
+  
+  // Simple toast implementation
+  showToast = function(message, type = 'info') {
     console.log(`[${type.toUpperCase()}] ${message}`);
     try {
       // Try to create a simple toast element if possible
-      const container = document.querySelector('.toast-container') || 
-                        document.createElement('div');
-      
-      if (!container.parentNode) {
+      let container = document.querySelector('.toast-container');
+      if (!container) {
+        container = document.createElement('div');
         container.className = 'toast-container';
         document.body.appendChild(container);
       }
@@ -106,9 +167,15 @@ function setupUIHelpers() {
       toast.textContent = message;
       container.appendChild(toast);
       
+      // Add show class for animation
+      setTimeout(() => toast.classList.add('show'), 10);
+      
       // Auto remove after 3 seconds
       setTimeout(() => {
-        if (toast.parentNode) toast.parentNode.removeChild(toast);
+        toast.classList.remove('show');
+        setTimeout(() => {
+          if (toast.parentNode) toast.parentNode.removeChild(toast);
+        }, 300);
       }, 3000);
     } catch (e) {
       // Last resort - alert for errors only
@@ -116,6 +183,7 @@ function setupUIHelpers() {
     }
   };
   
+  // Simple loading overlay handling
   hideLoading = function() {
     const overlay = document.querySelector('.loading-overlay');
     if (overlay) {
@@ -126,6 +194,7 @@ function setupUIHelpers() {
     }
   };
   
+  // Simple progress update
   updateProgress = function(progressBarOrSelector, percent) {
     // Validate inputs
     if (typeof percent !== 'number') {
@@ -146,7 +215,7 @@ function setupUIHelpers() {
     // If it's not provided or invalid, try to find it
     else {
       progressElement = document.querySelector('.progress-fill') || 
-                       document.querySelector('.progress-bar');
+                     document.querySelector('.progress-bar');
     }
     
     // Update the width if we found an element
@@ -164,6 +233,7 @@ function setupUIHelpers() {
     }
   };
   
+  // Simple show loading
   showLoading = function(message) {
     const overlay = document.querySelector('.loading-overlay');
     if (overlay) {
@@ -182,41 +252,54 @@ function setupUIHelpers() {
 function initializeUI() {
   console.log('Initializing UI state');
   
-  // Get all tab elements
-  const tabButtons = document.querySelectorAll('.tab-button');
-  const tabContents = document.querySelectorAll('.tab-content');
-  
-  // Hide all tab contents initially
-  tabContents.forEach(content => {
-    content.style.display = 'none';
-    content.classList.remove('active');
-  });
-  
-  // Remove active class from all tab buttons
-  tabButtons.forEach(button => {
-    button.classList.remove('active');
-  });
-  
-  // Set analyze tab as active by default
-  const analyzeTabButton = document.getElementById('analyze-tab');
-  const analyzeTabContent = document.querySelector('.tab-content#analyze-tab');
-  
-  if (analyzeTabButton && analyzeTabContent) {
-    analyzeTabButton.classList.add('active');
-    analyzeTabContent.classList.add('active');
-    analyzeTabContent.style.display = 'block';
-    console.log('Analyze tab set as active');
-  } else {
-    console.error('Analyze tab elements not found:', {
-      buttonFound: !!analyzeTabButton,
-      contentFound: !!analyzeTabContent
+  // Attempt to find and initialize form elements if they exist
+  try {
+    // Get all tab elements
+    const tabButtons = document.querySelectorAll('.tab-button');
+    const tabContents = document.querySelectorAll('.tab-content');
+    
+    // Hide all tab contents initially
+    tabContents.forEach(content => {
+      content.style.display = 'none';
+      content.classList.remove('active');
     });
+    
+    // Remove active class from all tab buttons
+    tabButtons.forEach(button => {
+      button.classList.remove('active');
+    });
+    
+    // Set analyze tab as active by default
+    const analyzeTabButton = document.querySelector('.tab-button[data-tab="analyze"]') || 
+                           document.getElementById('analyze-tab');
+    const analyzeTabContent = document.querySelector('.tab-content#analyze-tab') ||
+                            document.querySelector('.tab-content[data-tab="analyze"]');
+    
+    if (analyzeTabButton && analyzeTabContent) {
+      analyzeTabButton.classList.add('active');
+      analyzeTabContent.classList.add('active');
+      analyzeTabContent.style.display = 'block';
+      console.log('Analyze tab set as active');
+    } else {
+      console.warn('Analyze tab elements not found, using fallback');
+      // Just show the first tab as fallback
+      if (tabButtons.length > 0 && tabContents.length > 0) {
+        tabButtons[0].classList.add('active');
+        tabContents[0].classList.add('active');
+        tabContents[0].style.display = 'block';
+      }
+    }
+  } catch (error) {
+    console.warn('Error setting up tabs:', error);
+    // Non-critical error, continue with initialization
   }
   
   // Initialize profile input
   if (profileInput) {
-    profileInput.value = '';
-    profileInput.focus();
+    // Don't clear the input if it already has a value
+    if (!profileInput.value) {
+      profileInput.focus();
+    }
     
     // Set up input change handler
     profileInput.addEventListener('input', updateAnalyzeButtonState);
@@ -228,12 +311,13 @@ function initializeUI() {
         analyzeButton.click();
       }
     });
+  } else {
+    console.error('Profile input not found!');
   }
   
   // Initialize button states
   if (analyzeButton) {
-    analyzeButton.disabled = true;
-    analyzeButton.classList.remove('active');
+    updateAnalyzeButtonState();
   }
   
   // Initialize loading overlay and progress bar
@@ -245,29 +329,9 @@ function initializeUI() {
       progressBar.style.width = '0%';
       progressBar.classList.remove('pulse-animation');
     }
-    
-    // Set up cancel button
-    const cancelButton = loadingOverlay.querySelector('.cancel-button');
-    if (cancelButton) {
-      cancelButton.addEventListener('click', () => {
-        clearInterval(progressInterval);
-        clearTimeout(apiTimeout);
-        
-        hideLoading();
-        if (analyzeButton) {
-          analyzeButton.disabled = false;
-          analyzeButton.innerHTML = 'Analyze';
-        }
-        showToast('Analysis canceled', 'info');
-        
-        // Reset analyzing state
-        isAnalyzing = false;
-      });
-    }
+  } else {
+    console.warn('Loading overlay not found!');
   }
-  
-  // Initial button state
-  updateAnalyzeButtonState();
 }
 
 // Function to enable/disable analyze button based on input
@@ -286,60 +350,6 @@ function updateAnalyzeButtonState() {
     
     console.log(`Analyze button state updated: disabled=${!hasInput}`);
   }
-}
-
-// Set up tab navigation
-function setupTabNavigation() {
-  console.log('Setting up tab navigation');
-  
-  const tabButtons = document.querySelectorAll('.tab-button');
-  const tabContents = document.querySelectorAll('.tab-content');
-  
-  if (!tabButtons.length || !tabContents.length) {
-    console.error('Tab elements not found:', {
-      buttonCount: tabButtons.length,
-      contentCount: tabContents.length
-    });
-    return;
-  }
-  
-  // Set up click handlers for each tab button
-  tabButtons.forEach(button => {
-    button.addEventListener('click', (e) => {
-      const tabId = e.currentTarget.id;
-      console.log(`Tab clicked: ${tabId}`);
-      
-      // Remove active class from all buttons
-      tabButtons.forEach(btn => btn.classList.remove('active'));
-      
-      // Add active class to clicked button
-      e.currentTarget.classList.add('active');
-      
-      // Hide all tab contents
-      tabContents.forEach(content => {
-        content.classList.remove('active');
-        content.style.display = 'none';
-      });
-      
-      // Show the corresponding tab content
-      const contentId = tabId;
-      const selectedContent = document.querySelector(`.tab-content#${contentId}`);
-      if (selectedContent) {
-        selectedContent.classList.add('active');
-        selectedContent.style.display = 'block';
-        
-        // Load history if switching to history tab
-        if (tabId === 'history-tab') {
-          console.log('History tab activated, loading history');
-          setTimeout(() => {
-            loadHistory();
-          }, 100); // Short delay to ensure DOM is ready
-        }
-      } else {
-        console.error(`Tab content not found for ${tabId}`);
-      }
-    });
-  });
 }
 
 // Helper function to update loading status
@@ -363,20 +373,50 @@ function showError(message) {
   console.error('Error:', message);
   showToast(message, 'error');
   hideLoading();
-  isAnalyzing = false; // Reset analyzing state
+  directHandlerAnalyzing = false; // Reset analyzing state
+  
+  // Reset button if it exists
+  if (analyzeButton) {
+    analyzeButton.disabled = false;
+    analyzeButton.textContent = 'Analyze';
+  }
 }
 
 // Helper function to hide loading and reset button
 function hideLoadingAndResetButton() {
-  isAnalyzing = false; // Reset analyzing state
+  directHandlerAnalyzing = false; // Reset analyzing state
   
   // Use the hideLoading function
-  hideLoading();
+  if (typeof hideLoading === 'function') {
+    hideLoading();
+  } else {
+    // Fallback if hideLoading function is not available
+    if (loadingOverlay) {
+      loadingOverlay.classList.add('hidden');
+      loadingOverlay.classList.remove('visible');
+    }
+  }
   
   // Reset button if it exists
   if (analyzeButton) {
     analyzeButton.innerHTML = 'Analyze';
     analyzeButton.disabled = false;
+  }
+  
+  // Clear any abort controller
+  if (abortController) {
+    abortController = null;
+  }
+  
+  // Clear any intervals or timeouts
+  if (uniqueProgressInterval) {
+    clearInterval(uniqueProgressInterval);
+    uniqueProgressInterval = null;
+  }
+  
+  if (uniqueApiTimeout) {
+    clearTimeout(uniqueApiTimeout);
+    uniqueApiTimeout = null;
   }
 }
 
@@ -408,12 +448,43 @@ function extractUsername(input) {
   return null;
 }
 
+// Function to cancel the current analysis
+function cancelAnalysis() {
+  console.log('Cancelling analysis...');
+  
+  // Abort any in-progress API request
+  if (abortController) {
+    try {
+      abortController.abort();
+    } catch (error) {
+      console.warn('Error aborting API request:', error);
+      // Non-critical error, continue with cancellation
+    }
+  }
+  
+  // Clear any loading progress animation
+  if (uniqueProgressInterval) {
+    clearInterval(uniqueProgressInterval);
+    uniqueProgressInterval = null;
+  }
+  
+  // Clear any timeout
+  if (uniqueApiTimeout) {
+    clearTimeout(uniqueApiTimeout);
+    uniqueApiTimeout = null;
+  }
+  
+  // Reset UI
+  hideLoadingAndResetButton();
+  showToast('Analysis cancelled', 'info');
+}
+
 // Main function to handle analyze button click
-function handleAnalyzeClick() {
+async function handleAnalyzeClick() {
   console.log('Analyze button clicked');
   
   // Prevent multiple simultaneous requests
-  if (isAnalyzing) {
+  if (directHandlerAnalyzing) {
     console.log('Already analyzing, ignoring click');
     showToast('Analysis in progress, please wait', 'info');
     return;
@@ -435,7 +506,7 @@ function handleAnalyzeClick() {
   }
   
   // Set analyzing state
-  isAnalyzing = true;
+  directHandlerAnalyzing = true;
   
   // Show loading state
   analyzeButton.disabled = true;
@@ -448,14 +519,15 @@ function handleAnalyzeClick() {
   if (progressBar) {
     progressBar.style.width = '0%';
     progressBar.classList.remove('pulse-animation');
+    progressBar.classList.remove('complete');
   }
   
   // Start progress animation
   let progress = 0;
-  progressInterval = setInterval(() => {
+  uniqueProgressInterval = setInterval(() => {
     progress += 1;
     if (progress > 90) {
-      clearInterval(progressInterval);
+      clearInterval(uniqueProgressInterval);
     }
     
     // Use updateProgress with both selector and percentage
@@ -474,177 +546,332 @@ function handleAnalyzeClick() {
   }, 100);
   
   // Set a timeout for the API call (20 seconds)
-  apiTimeout = setTimeout(() => {
-    clearInterval(progressInterval);
-    hideLoadingAndResetButton();
-    showToast('Analysis timed out. Please try again later.', 'error');
-    
-    // Show fallback results
-    showFallbackResults(username);
+  uniqueApiTimeout = setTimeout(() => {
+    if (directHandlerAnalyzing) {
+      clearInterval(uniqueProgressInterval);
+      console.warn('Analysis timed out!');
+      
+      // Don't reset UI yet - wait for the fallback to show
+      showLoading('API request timed out, showing fallback data...');
+      updateProgress('.progress-fill', 90);
+      
+      // Show fallback results after timeout
+      showFallbackResults(username, null, 'Request timed out');
+      
+      // Reset button and state
+      hideLoadingAndResetButton();
+    }
   }, 20000);
   
-  // Send message to background script
   try {
-    chrome.runtime.sendMessage({
-      action: 'analyzeProfile',
-      username: username
-    }, function(response) {
-      // Clear timeouts since we got a response
-      clearTimeout(apiTimeout);
-      clearInterval(progressInterval);
-      
-      // Complete the progress
-      updateProgress('.progress-fill', 100);
-      showLoading('Processing results...');
-      
-      // Slight delay for visual feedback
-      setTimeout(() => {
-        hideLoadingAndResetButton();
-        
-        // Handle response
-        if (response && response.success) {
-          // Show results
-          showResults(username, response.data);
-          showToast(`Profile analysis for @${username} complete!`, 'success');
-        } else {
-          // Show error and fallback results
-          const errorMsg = response?.error || 'Unknown error occurred';
-          showToast(`Analysis error: ${errorMsg}`, 'error');
-          showFallbackResults(username);
-        }
-      }, 500);
+    // Initialize the analyzer if needed
+    if (!profileAnalyzer.initialized) {
+      await profileAnalyzer.initialize();
+    }
+    
+    // Use the ProfileAnalyzer to get profile data
+    const profileData = await profileAnalyzer.analyzeProfile(username, {
+      forceRefresh: true, // Always get fresh data
+      tweetCount: 50 // Get up to 50 tweets for better analysis
     });
+    
+    // Clear timeouts and intervals since we got a response
+    clearTimeout(uniqueApiTimeout);
+    clearInterval(uniqueProgressInterval);
+    
+    // Complete the progress
+    updateProgress('.progress-fill', 100);
+    
+    // Show results
+    showResults(username, profileData);
+    
+    // Add to history if we have valid data
+    if (!profileData.isFallbackData) {
+      addToHistory(username, profileData);
+    }
+    
   } catch (error) {
-    clearInterval(progressInterval);
-    clearTimeout(apiTimeout);
+    console.error('Error analyzing profile:', error);
+    
+    // Clear any pending timers
+    clearInterval(uniqueProgressInterval);
+    clearTimeout(uniqueApiTimeout);
+    
+    // Show error state
+    showError(`Failed to analyze profile: ${error.message}`);
+    
+    // Try to show fallback results
+    showFallbackResults(username, null, error.message);
+  } finally {
+    // Reset UI state
     hideLoadingAndResetButton();
-    showToast(`Error: ${error.message || 'Unknown error'}`, 'error');
-    showFallbackResults(username);
   }
 }
 
-// Placeholder for test API handler
-function handleTestApiClick() {
+// Function to test API connection
+async function handleTestApiClick() {
   console.log('Test API button clicked');
-  showToast('Testing API connectivity...', 'info');
   
-  // Disable button while testing
-  const testButton = document.getElementById('test-api-button');
-  if (testButton) {
-    testButton.disabled = true;
-    testButton.textContent = 'Testing...';
+  // Get test button
+  const testButton = document.getElementById('test-api-button') || 
+                    document.querySelector('.test-api-button') ||
+                    document.querySelector('button[data-action="test-api"]');
+  
+  if (!testButton) {
+    console.error('Test API button not found!');
+    showToast('Test button not found', 'error');
+    return;
   }
   
-  // Send test message to background script
-  chrome.runtime.sendMessage({
-    action: 'testApiConnection',
-    forceCheck: true
-  }, function(response) {
-    // Re-enable button
-    if (testButton) {
-      testButton.disabled = false;
-      testButton.textContent = 'Test API';
-    }
+  // Show loading state
+  const originalText = testButton.textContent;
+  testButton.disabled = true;
+  testButton.textContent = 'Testing...';
+  
+  try {
+    // Send test message to background script
+    const response = await new Promise((resolve, reject) => {
+      try {
+        chrome.runtime.sendMessage({
+          action: 'testApiConnection',
+          forceCheck: true
+        }, function(response) {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+          } else {
+            resolve(response);
+          }
+        });
+      } catch (error) {
+        reject(error);
+      }
+      
+      // Add a timeout to avoid hanging
+      setTimeout(() => reject(new Error('Request timed out')), 10000);
+    });
+    
+    // Reset button state
+    testButton.disabled = false;
+    testButton.textContent = originalText;
     
     // Process response
-    if (response && (response.success || (response.config1Result && response.config1Result.success))) {
+    if (response && (response.success || 
+                    (response.config1Result && response.config1Result.success) ||
+                    (response.results && response.results.some(r => r.success)))) {
       showToast('API connection successful!', 'success');
+      
+      // Add additional info if available
+      if (response.config1Result && response.config1Result.rateLimit) {
+        const rl = response.config1Result.rateLimit;
+        console.log(`Rate limit info - Remaining: ${rl.remaining}, Reset: ${rl.resetTime}`);
+      }
     } else {
       showToast('API connection failed. Check console for details.', 'error');
       console.error('API test failed:', response);
     }
-  });
-}
-
-// Simple implementation of showResults
-function showResults(username, data) {
-  console.log('Showing results for:', username, data);
-  
-  // Basic implementation
-  if (resultsContainer) {
-    resultsContainer.style.display = 'block';
-    resultsContainer.innerHTML = `
-      <div class="results-card">
-        <h3>Analysis for @${username}</h3>
-        <p>Profile analyzed successfully. Displaying results...</p>
-      </div>
-    `;
+  } catch (error) {
+    console.error('Error testing API:', error);
+    
+    // Reset button state
+    testButton.disabled = false;
+    testButton.textContent = originalText;
+    
+    // Show error
+    showToast(`API test error: ${error.message}`, 'error');
   }
 }
 
-// Simple implementation of showFallbackResults
-function showFallbackResults(username) {
+// Function to display results
+function showResults(username, data) {
+  console.log('Showing results for', username, data);
+  
+  if (!resultsContainer) {
+    console.error('Results container not found');
+    return;
+  }
+  
+  resultsContainer.style.display = 'block';
+  
+  // Format metrics in a readable way
+  const followers = formatNumber(data.analytics?.metrics?.followers || data.user?.public_metrics?.followers_count || 0);
+  const following = formatNumber(data.analytics?.metrics?.following || data.user?.public_metrics?.following_count || 0);
+  const tweets = formatNumber(data.analytics?.metrics?.tweets || data.user?.public_metrics?.tweet_count || 0);
+  const engagement = data.analytics?.engagement?.rate || '0.00%';
+  
+  // Build recommendations list
+  const recommendations = data.strategy?.recommendations || [];
+  const recommendationsList = recommendations.map(rec => `<li>${rec}</li>`).join('');
+  
+  // Warning banner for fallback data
+  const warningBanner = data.isFallbackData || data.warning
+    ? `<div class="warning-banner">${data.warning || 'Using estimated data - API access limited'}</div>`
+    : '';
+  
+  // Construct results HTML
+  const resultsHTML = `
+    <div class="results-card">
+      ${warningBanner}
+      <h3>Analysis for @${username}</h3>
+      
+      <div class="metrics-grid">
+        <div class="metric-card">
+          <div class="metric-value">${followers}</div>
+          <div class="metric-label">Followers</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-value">${following}</div>
+          <div class="metric-label">Following</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-value">${tweets}</div>
+          <div class="metric-label">Tweets</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-value">${engagement}</div>
+          <div class="metric-label">Engagement</div>
+        </div>
+      </div>
+      
+      <h4>Recommended Strategies</h4>
+      <ul class="strategy-list">
+        ${recommendationsList}
+      </ul>
+      
+      <div class="footer">
+        <span class="timestamp">Analyzed ${new Date().toLocaleString()}</span>
+        <span class="version">X Profile Analyzer v1.2.0</span>
+      </div>
+    </div>
+  `;
+  
+  resultsContainer.innerHTML = resultsHTML;
+}
+
+// Show fallback results when API fails
+function showFallbackResults(username, data = null, warning = null) {
   console.log('Showing fallback results for:', username);
   
-  // Basic implementation
-  if (resultsContainer) {
-    resultsContainer.style.display = 'block';
+  if (!resultsContainer) {
+    console.error('Results container not found!');
+    return;
+  }
+  
+  // Prepare the fallback HTML with warning
+  resultsContainer.style.display = 'block';
+  
+  // If we have some data, try to show it, otherwise show pure placeholder
+  if (data && data.user) {
+    // Call regular show results with a warning flag
+    showResults(username, {
+      ...data,
+      fromFallback: true,
+      isEstimated: true
+    });
+    
+    // Add warning banner at the top if one was provided
+    if (warning) {
+      const warningEl = document.createElement('div');
+      warningEl.className = 'api-warning-banner';
+      warningEl.textContent = warning;
+      resultsContainer.prepend(warningEl);
+    }
+  } else {
+    // Show pure placeholder
     resultsContainer.innerHTML = `
       <div class="results-card">
         <div class="error-banner">API unavailable - showing estimated data</div>
         <h3>Analysis for @${username}</h3>
-        <p>Unable to retrieve data from API. Showing placeholder results.</p>
+        
+        <div class="metrics-grid">
+          <div class="metric-card">
+            <div class="metric-value">~1.5K</div>
+            <div class="metric-label">Followers</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-value">~400</div>
+            <div class="metric-label">Following</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-value">~2.2K</div>
+            <div class="metric-label">Tweets</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-value">1.2%</div>
+            <div class="metric-label">Engagement</div>
+          </div>
+        </div>
+        
+        <div class="strategy-section">
+          <h4>Recommended Strategies</h4>
+          <ul class="strategy-recommendations">
+            <li>Post consistently to increase visibility</li>
+            <li>Engage with comments to build community</li>
+            <li>Use visual content for higher engagement</li>
+            <li>Participate in relevant conversations in your niche</li>
+          </ul>
+        </div>
+        
+        <p class="fallback-notice">Note: This is estimated data based on typical profiles. For accurate analysis, please ensure the API is correctly configured.</p>
       </div>
     `;
   }
 }
 
-// Placeholder for loadHistory function
-function loadHistory() {
-  console.log('Loading history items (placeholder)');
-}
-
-// Optional: Helper functions for showing results
+// Format number for display (e.g. 1200 -> 1.2K)
 function formatNumber(num) {
-  if (num === undefined || num === null) return '0';
+  if (num === null || num === undefined) return '0';
   
   if (num >= 1000000) {
-    return (num / 1000000).toFixed(1) + 'M';
-  } else if (num >= 1000) {
-    return (num / 1000).toFixed(1) + 'K';
+    return (num / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
+  }
+  
+  if (num >= 1000) {
+    return (num / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
   }
   
   return num.toString();
 }
 
-// For adding to history (placeholder implementation)
-function addToHistory(username, metrics) {
-  console.log('Added to history:', username, metrics);
-}
-
-// Clear browser cache for the extension
-function handleClearCache() {
-  console.log('Clearing cache...');
-  
-  chrome.runtime.sendMessage({
-    action: 'clearCache'
-  }, function(response) {
-    if (response && response.success) {
-      showToast('Cache cleared successfully!', 'success');
-    } else {
-      showToast('Failed to clear cache', 'error');
-    }
-  });
-}
-
-// Clear analysis history
-function clearHistory() {
-  console.log('Clearing history...');
-  
-  chrome.storage.local.remove(['analysisHistory'], function() {
-    if (chrome.runtime.lastError) {
-      showToast('Error clearing history: ' + chrome.runtime.lastError.message, 'error');
-    } else {
-      showToast('History cleared successfully', 'success');
+// Add to history for quick access later
+function addToHistory(username, data) {
+  try {
+    // Get existing history from storage
+    chrome.storage.local.get(['profileHistory'], function(result) {
+      const history = result.profileHistory || [];
       
-      // Refresh history tab if it's active
-      const historyTab = document.querySelector('#history-tab');
-      if (historyTab && historyTab.classList.contains('active')) {
-        const historyContainer = document.querySelector('.history-container');
-        if (historyContainer) {
-          historyContainer.innerHTML = '<p class="no-history">No history available</p>';
-        }
-      }
-    }
-  });
-} 
+      // Create a summarized entry for history
+      const historyEntry = {
+        username,
+        displayName: data.displayName || username,
+        followers: data.analytics?.metrics?.followers || data.user?.public_metrics?.followers_count || 0,
+        following: data.analytics?.metrics?.following || data.user?.public_metrics?.following_count || 0,
+        tweets: data.analytics?.metrics?.tweets || data.user?.public_metrics?.tweet_count || 0,
+        engagement: data.analytics?.engagement?.rate || '0.00%',
+        timestamp: Date.now(),
+        profileImage: data.profileImageUrl || data.user?.profile_image_url || ''
+      };
+      
+      // Add to beginning of array (newest first)
+      history.unshift(historyEntry);
+      
+      // Limit history to 20 items
+      const limitedHistory = history.slice(0, 20);
+      
+      // Save back to storage
+      chrome.storage.local.set({ profileHistory: limitedHistory }, function() {
+        console.log('Profile added to history:', username);
+      });
+    });
+  } catch (error) {
+    console.error('Error adding to history:', error);
+  }
+}
+
+// Export key functions for testing/debugging
+window.directHandler = {
+  handleAnalyzeClick,
+  showResults,
+  showFallbackResults,
+  cancelAnalysis,
+  extractUsername
+}; 
