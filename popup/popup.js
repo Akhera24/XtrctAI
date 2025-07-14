@@ -1,5 +1,5 @@
-// X Profile Analyzer Chrome Extension - Completely Fixed Version
-// Version 1.4.0 - Bulletproof tab switching and full X API integration
+// X Profile Analyzer Chrome Extension - Rate Limiting Enhanced Version
+// Version 1.5.0 - Enhanced with intelligent rate limiting and caching
 
 console.log('🚀 Loading X Profile Analyzer...');
 
@@ -12,7 +12,8 @@ const extensionState = {
   abortController: null,
   elements: {},
   tabListeners: new Map(),
-  isInitialized: false
+  isInitialized: false,
+  rateLimitStatus: null
 };
 
 // UI Helper utilities
@@ -31,6 +32,17 @@ const UIHelpers = {
     return num.toString();
   },
 
+  formatTime(ms) {
+    if (ms <= 0) return '0s';
+    const minutes = Math.floor(ms / 60000);
+    const seconds = Math.floor((ms % 60000) / 1000);
+    
+    if (minutes > 0) {
+      return `${minutes}m ${seconds}s`;
+    }
+    return `${seconds}s`;
+  },
+
   showToast(message, type = 'info', duration = 3000) {
     try {
       let container = document.querySelector('.toast-container');
@@ -44,7 +56,7 @@ const UIHelpers = {
       const toast = document.createElement('div');
       toast.className = `toast ${type}`;
       toast.style.cssText = `
-        background: ${type === 'error' ? '#ef4444' : type === 'success' ? '#10b981' : '#3b82f6'};
+        background: ${type === 'error' ? '#ef4444' : type === 'success' ? '#10b981' : type === 'warning' ? '#f59e0b' : '#3b82f6'};
         color: white; padding: 12px 16px; border-radius: 8px; margin-bottom: 8px;
         box-shadow: 0 4px 12px rgba(0,0,0,0.15); transform: translateX(100%);
         transition: transform 0.3s ease; max-width: 300px; word-wrap: break-word;
@@ -54,7 +66,7 @@ const UIHelpers = {
       container.appendChild(toast);
       
       // Animate in
-    setTimeout(() => {
+      setTimeout(() => {
         toast.style.transform = 'translateX(0)';
       }, 10);
 
@@ -67,7 +79,7 @@ const UIHelpers = {
           }
         }, 300);
       }, duration);
-      } catch (error) {
+    } catch (error) {
       console.warn('Toast error:', error);
     }
   },
@@ -104,6 +116,64 @@ const UIHelpers = {
       percent = Math.max(0, Math.min(100, Number(percent) || 0));
       progressFill.style.width = `${percent}%`;
     }
+  },
+
+  updateRateLimitStatus(status) {
+    const statusElement = document.getElementById('rate-limit-status');
+    if (!statusElement || !status) return;
+
+    // Calculate totals from new comprehensive rate limit structure
+    let totalRemaining = 0;
+    let totalUsed = 0;
+    let totalLimit = 0;
+    let nextReset = null;
+    
+    // Use summary data if available
+    if (status.summary) {
+      totalRemaining = status.summary.totalRemaining;
+      totalUsed = status.summary.totalUsed;
+      totalLimit = status.summary.totalLimit;
+    } else {
+      // Sum up individual configs
+      Object.values(status).forEach(configStatus => {
+        if (typeof configStatus === 'object' && configStatus.remaining !== undefined) {
+          totalRemaining += configStatus.remaining;
+          totalUsed += configStatus.used;
+          totalLimit += configStatus.total;
+          
+          if (!nextReset || configStatus.resetIn < nextReset) {
+            nextReset = configStatus.resetIn;
+          }
+        }
+      });
+    }
+    
+    const percentUsed = totalLimit > 0 ? (totalUsed / totalLimit) * 100 : 0;
+    
+    let statusColor = '#10b981'; // Green
+    let statusText = 'Good';
+    
+    if (percentUsed >= 90) {
+      statusColor = '#ef4444'; // Red
+      statusText = 'Critical';
+    } else if (percentUsed >= 70) {
+      statusColor = '#f59e0b'; // Yellow
+      statusText = 'Warning';
+    }
+
+    statusElement.innerHTML = `
+      <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: rgba(${statusColor === '#ef4444' ? '239,68,68' : statusColor === '#f59e0b' ? '245,158,11' : '16,185,129'}, 0.1); border-radius: 8px; border-left: 3px solid ${statusColor};">
+        <div style="font-size: 12px;">
+          <span style="font-weight: 600; color: ${statusColor};">Rate Limit: ${statusText}</span><br>
+          <span style="color: #536471;">${totalRemaining}/${totalLimit} requests left</span>
+          ${status.summary?.activeConfig ? `<br><span style="color: #536471; font-size: 10px;">Using: ${status.summary.activeConfig}</span>` : ''}
+        </div>
+        <div style="font-size: 11px; color: #536471; text-align: right;">
+          ${nextReset && nextReset > 0 ? `Reset: ${this.formatTime(nextReset)}` : 'Ready'}<br>
+          <span style="color: #10b981;">🌐 Proxy Integration Active</span>
+        </div>
+      </div>
+    `;
   }
 };
 
@@ -406,11 +476,13 @@ class ProfileAnalyzer {
     console.log('🔍 Initializing Profile Analyzer...');
     this.setupEventListeners();
     this.updateAnalyzeButtonState();
+    this.updateRateLimitDisplay();
   }
 
   static setupEventListeners() {
     const analyzeButton = document.getElementById('analyze-button');
     const profileInput = document.getElementById('profile-input');
+    const testApiButton = document.getElementById('test-api-button');
 
     if (analyzeButton) {
       analyzeButton.addEventListener('click', () => this.handleAnalyze());
@@ -426,6 +498,10 @@ class ProfileAnalyzer {
       });
     }
 
+    if (testApiButton) {
+      testApiButton.addEventListener('click', () => this.testApiConnection());
+    }
+
     // Clear history button
     const clearHistoryBtn = document.getElementById('clear-history-button');
     if (clearHistoryBtn) {
@@ -436,6 +512,18 @@ class ProfileAnalyzer {
         });
       });
     }
+
+    // Update rate limit status every 30 seconds
+    setInterval(() => this.updateRateLimitDisplay(), 30000);
+  }
+
+  static updateRateLimitDisplay() {
+    chrome.runtime.sendMessage({ action: 'getRateLimitStatus' }, (response) => {
+      if (response && !chrome.runtime.lastError && response.success) {
+        extensionState.rateLimitStatus = response.rateLimitStatus;
+        UIHelpers.updateRateLimitStatus(response.rateLimitStatus);
+      }
+    });
   }
 
   static updateAnalyzeButtonState() {
@@ -445,12 +533,23 @@ class ProfileAnalyzer {
     if (!analyzeButton || !profileInput) return;
     
     const hasInput = profileInput.value.trim().length > 0;
-    analyzeButton.disabled = !hasInput || extensionState.isAnalyzing;
+    const canAnalyze = hasInput && !extensionState.isAnalyzing;
+    
+    // Check rate limit status
+    if (extensionState.rateLimitStatus && extensionState.rateLimitStatus.requests >= extensionState.rateLimitStatus.maxRequests) {
+      analyzeButton.disabled = true;
+      analyzeButton.innerHTML = '⏳ Rate Limited';
+      analyzeButton.title = `Rate limit reached. Try again in ${UIHelpers.formatTime(extensionState.rateLimitStatus.resetTime)}`;
+      return;
+    }
+    
+    analyzeButton.disabled = !canAnalyze;
     
     if (extensionState.isAnalyzing) {
       analyzeButton.innerHTML = '<span style="display: inline-block; width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-radius: 50%; border-top-color: white; animation: spin 0.8s linear infinite; margin-right: 8px;"></span>Analyzing...';
     } else {
       analyzeButton.innerHTML = 'Analyze';
+      analyzeButton.title = '';
     }
   }
 
@@ -476,7 +575,7 @@ class ProfileAnalyzer {
       UIHelpers.updateProgress(10);
 
       const username = this.extractUsername(profileValue);
-    if (!username) {
+      if (!username) {
         throw new Error('Invalid profile URL or handle');
       }
 
@@ -489,19 +588,26 @@ class ProfileAnalyzer {
       const progressInterval = setInterval(() => {
         progress += 3;
         if (progress >= 85) {
-        clearInterval(progressInterval);
-      }
+          clearInterval(progressInterval);
+        }
         UIHelpers.updateProgress(progress);
       }, 200);
 
       // Send analysis request to background script
       const response = await this.sendAnalysisRequest(username);
       
-        clearInterval(progressInterval);
+      clearInterval(progressInterval);
       UIHelpers.updateProgress(100);
 
       if (!response || !response.success) {
-        throw new Error(response?.error || 'Analysis failed');
+        // Handle specific error types
+        if (response?.error?.includes('Rate limit')) {
+          throw new Error('⏳ Rate limit reached. Please wait a few minutes before trying again.');
+        } else if (response?.error?.includes('wait') && response?.error?.includes('minute')) {
+          throw new Error(response.error);
+        } else {
+          throw new Error(response?.error || 'Analysis failed');
+        }
       }
 
       await new Promise(r => setTimeout(r, 300));
@@ -510,9 +616,22 @@ class ProfileAnalyzer {
       
       UIHelpers.showToast('Analysis completed successfully!', 'success');
 
+      // Update rate limit status after successful request
+      this.updateRateLimitDisplay();
+
     } catch (error) {
       console.error('❌ Analysis error:', error);
-      UIHelpers.showToast(error.message || 'Analysis failed', 'error');
+      
+      // Show specific error messages for rate limiting
+      if (error.message.includes('Rate limit') || error.message.includes('429')) {
+        UIHelpers.showToast('Rate limit reached! Try again in a few minutes.', 'warning', 5000);
+        setTimeout(() => this.updateRateLimitDisplay(), 1000);
+      } else if (error.message.includes('wait') && error.message.includes('minute')) {
+        UIHelpers.showToast(error.message, 'warning', 5000);
+      } else {
+        UIHelpers.showToast(error.message || 'Analysis failed', 'error');
+      }
+      
       this.displayFallbackResults(username || 'unknown');
     } finally {
       extensionState.isAnalyzing = false;
@@ -523,36 +642,133 @@ class ProfileAnalyzer {
 
   static sendAnalysisRequest(username) {
     return new Promise((resolve, reject) => {
-      console.log(`📡 Sending X API request for: @${username}`);
+      console.log(`📡 Sending analysis request for: @${username}`);
       
-      // Set a timeout
+      // Clear any existing timeout
+      if (extensionState.apiTimeout) {
+        clearTimeout(extensionState.apiTimeout);
+      }
+
+      // Set a more generous timeout for API requests
       const timeoutId = setTimeout(() => {
-        reject(new Error('Request timeout'));
-      }, 30000);
+        console.error('❌ Request timeout after 60 seconds');
+        reject(new Error('Request timeout - please try again. This might be due to rate limiting.'));
+      }, 60000); // 60 seconds timeout
       
+      // Store timeout ID for cleanup
+      extensionState.apiTimeout = timeoutId;
+      
+      try {
       chrome.runtime.sendMessage({
-        action: 'analyzeProfile',
-        username: username,
-        options: { forceRefresh: false }
+          action: 'analyze',
+          username: username
       }, (response) => {
         clearTimeout(timeoutId);
+          extensionState.apiTimeout = null;
         
+          // Check for Chrome runtime errors
         if (chrome.runtime.lastError) {
-          console.error('❌ Runtime error:', chrome.runtime.lastError);
-          reject(new Error(chrome.runtime.lastError.message));
+            console.error('❌ Chrome runtime error:', chrome.runtime.lastError);
+            reject(new Error(`Extension error: ${chrome.runtime.lastError.message}`));
           return;
         }
         
+          // Check if we got a response
         if (!response) {
           console.error('❌ No response from background script');
-          reject(new Error('No response from background script'));
+            reject(new Error('No response from background script. The extension may need to be reloaded.'));
           return;
         }
         
         console.log('📡 Received response:', response.success ? '✅ Success' : '❌ Failed');
+          
+          // Handle successful response
+          if (response.success && response.data) {
         resolve(response);
-      });
+          } else {
+            // Handle error response but still resolve with data if available
+            if (response.data) {
+              console.warn('⚠️ API request failed but fallback data available:', response.error);
+              resolve({
+                success: false,
+                data: response.data,
+                error: response.error,
+                isFallback: true
+              });
+            } else {
+              reject(new Error(response.error || 'Analysis failed without data'));
+            }
+          }
+        });
+      } catch (error) {
+        clearTimeout(timeoutId);
+        console.error('❌ Error sending message:', error);
+        reject(error);
+      }
     });
+  }
+
+  static async testApiConnection() {
+    try {
+      console.log('🔗 Testing API connection...');
+      
+      // Show loading state
+      const testButton = document.getElementById('test-api-button');
+      if (testButton) {
+        testButton.disabled = true;
+        testButton.textContent = 'Testing...';
+      }
+
+      // Test connection with timeout
+      const response = await new Promise((resolve, reject) => {
+        const timeoutId = setTimeout(() => {
+          reject(new Error('Connection test timeout'));
+        }, 30000); // 30 second timeout
+        
+        chrome.runtime.sendMessage({
+          action: 'testApi'
+        }, (response) => {
+          clearTimeout(timeoutId);
+          
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+            return;
+          }
+          
+          resolve(response);
+        });
+      });
+      
+      // Handle response
+      if (response && response.success) {
+        const testUser = response.data?.testUser || 'Unknown';
+        const followers = response.data?.followers || 0;
+        const usingProxy = response.data?.usingProxy ? 'Yes' : 'No';
+        
+        UIHelpers.showToast(
+          `✅ API Connection Successful!\nTest User: @${testUser}\nFollowers: ${UIHelpers.formatNumber(followers)}\nProxy: ${usingProxy}`,
+          'success',
+          5000
+        );
+        
+        console.log('✅ API connection test passed:', response.data);
+      } else {
+        const errorMsg = response?.error || 'Unknown connection error';
+        UIHelpers.showToast(`❌ API Connection Failed: ${errorMsg}`, 'error', 5000);
+        console.error('❌ API connection test failed:', errorMsg);
+      }
+      
+    } catch (error) {
+      console.error('❌ Connection test error:', error);
+      UIHelpers.showToast(`❌ Connection Test Error: ${error.message}`, 'error', 5000);
+    } finally {
+      // Reset button state
+      const testButton = document.getElementById('test-api-button');
+      if (testButton) {
+        testButton.disabled = false;
+        testButton.textContent = 'Test API';
+      }
+    }
   }
 
   static extractUsername(input) {
@@ -583,161 +799,461 @@ class ProfileAnalyzer {
   }
 
   static displayResults(username, data) {
+    try {
     console.log('📊 Displaying results for:', username);
     
-    const resultsContainer = document.getElementById('results-container');
-    if (!resultsContainer) {
+      // Get results container - using the correct ID from HTML
+      const resultsDiv = document.getElementById('results-container');
+      if (!resultsDiv) {
       console.error('❌ Results container not found');
       return;
     }
     
-    username = username.replace(/^@/, '');
-    
-    const user = data.user || {};
-    const metrics = user.public_metrics || {};
-    const tweets = data.tweets || [];
+      // Clear previous results
+      resultsDiv.innerHTML = '';
+      resultsDiv.style.display = 'block';
 
-    // Calculate engagement
-    const avgLikes = tweets.length > 0 ? 
-      tweets.reduce((sum, tweet) => sum + (tweet.public_metrics?.like_count || 0), 0) / tweets.length : 0;
-    
-    let engagementLevel = 'Low';
-    let engagementColor = '#ef4444';
-    if (avgLikes > 100) {
-      engagementLevel = 'High';
-      engagementColor = '#10b981';
-    } else if (avgLikes > 20) {
-      engagementLevel = 'Good';
-      engagementColor = '#3b82f6';
-    } else if (avgLikes > 5) {
-      engagementLevel = 'Average';
-      engagementColor = '#f59e0b';
-    }
-
-    resultsContainer.style.display = 'block';
-    resultsContainer.innerHTML = `
-      <div style="background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 20px;">
-          <h3 style="margin: 0;">Analysis for @${username}</h3>
-          ${user.verified ? '<span style="background: #1d9bf0; color: white; padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: 600;">✓ Verified</span>' : ''}
-        </div>
+      // Show warning for fallback data
+      if (data.isFallbackData || data.dataSource?.includes('Fallback')) {
+        const warningDiv = document.createElement('div');
+        warningDiv.className = 'warning-banner';
+        warningDiv.style.cssText = `
+          background: linear-gradient(135deg, #fef3c7, #fde68a);
+          border: 1px solid #f59e0b;
+          border-radius: 12px;
+          padding: 16px;
+          margin-bottom: 20px;
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        `;
         
-        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 16px 0;">
-          <div style="background-color: rgba(0, 0, 0, 0.03); border-radius: 12px; padding: 12px; text-align: center;">
-            <div style="font-size: 20px; font-weight: 700; color: #1d9bf0; margin-bottom: 4px;">${UIHelpers.formatNumber(metrics.followers_count || 0)}</div>
-            <div style="font-size: 12px; color: #536471;">Followers</div>
+        warningDiv.innerHTML = `
+          <div style="font-size: 24px;">⚠️</div>
+          <div style="flex: 1;">
+            <div style="font-weight: 600; color: #92400e; margin-bottom: 4px;">Using Estimated Data</div>
+            <div style="font-size: 14px; color: #b45309; line-height: 1.4;">
+              ${data.warning || 'Real-time data unavailable. Results are estimated and may not reflect actual metrics.'}
+            </div>
           </div>
-          <div style="background-color: rgba(0, 0, 0, 0.03); border-radius: 12px; padding: 12px; text-align: center;">
-            <div style="font-size: 20px; font-weight: 700; color: #1d9bf0; margin-bottom: 4px;">${UIHelpers.formatNumber(metrics.following_count || 0)}</div>
-            <div style="font-size: 12px; color: #536471;">Following</div>
-          </div>
-          <div style="background-color: rgba(0, 0, 0, 0.03); border-radius: 12px; padding: 12px; text-align: center;">
-            <div style="font-size: 20px; font-weight: 700; color: #1d9bf0; margin-bottom: 4px;">${UIHelpers.formatNumber(metrics.tweet_count || 0)}</div>
-            <div style="font-size: 12px; color: #536471;">Tweets</div>
-          </div>
-          <div style="background-color: rgba(0, 0, 0, 0.03); border-radius: 12px; padding: 12px; text-align: center;">
-            <div style="font-size: 20px; font-weight: 700; color: ${engagementColor}; margin-bottom: 4px;">${engagementLevel}</div>
-            <div style="font-size: 12px; color: #536471;">Engagement</div>
-          </div>
-        </div>
+        `;
+        
+        resultsDiv.appendChild(warningDiv);
+      }
 
-        <div style="background-color: rgba(29, 155, 240, 0.05); padding: 16px; border-radius: 12px; margin: 16px 0; border-left: 4px solid #1d9bf0;">
-          <h4 style="margin: 0 0 8px 0; color: #1d9bf0;">Profile Insights</h4>
-          <p style="margin: 0; line-height: 1.5;">
-            This profile has a ${metrics.followers_count > metrics.following_count ? 'strong' : 'growing'} following and 
-            ${tweets.length > 0 ? `recent activity with an average of ${Math.round(avgLikes)} likes per post` : 'limited recent activity'}.
-            ${user.description ? ` Bio: "${user.description.substring(0, 100)}${user.description.length > 100 ? '...' : ''}"` : ''}
-          </p>
-        </div>
+      // Profile header
+      const headerDiv = document.createElement('div');
+      headerDiv.className = 'profile-header';
+      headerDiv.style.cssText = `
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 20px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 16px;
+        color: white;
+        margin-bottom: 24px;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.12);
+      `;
 
-        <div style="background-color: rgba(0, 0, 0, 0.02); padding: 16px; border-radius: 12px; margin: 16px 0;">
-          <h4 style="margin: 0 0 12px 0; color: #1d9bf0;">📈 Growth Recommendations</h4>
-          <ul style="margin: 0; padding-left: 20px;">
-            <li style="margin-bottom: 8px;">Post consistently to maintain engagement</li>
-            <li style="margin-bottom: 8px;">Engage with your audience through replies and comments</li>
-            <li style="margin-bottom: 8px;">Use relevant hashtags to increase discoverability</li>
-            <li style="margin-bottom: 8px;">Share valuable content that resonates with your audience</li>
-          </ul>
-        </div>
+      const avatarDiv = document.createElement('div');
+      const profileImage = data.profile?.profileImageUrl || data.profileImage;
+      avatarDiv.style.cssText = `
+        width: 64px;
+        height: 64px;
+        border-radius: 50%;
+        background: ${profileImage ? `url(${profileImage})` : 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)'};
+        background-size: cover;
+        background-position: center;
+        border: 3px solid rgba(255,255,255,0.2);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 24px;
+        font-weight: bold;
+        color: white;
+      `;
 
-        ${data.fromFallback ? `
-          <p style="background-color: rgba(244, 93, 34, 0.1); color: #f45d22; padding: 12px; border-radius: 8px; margin-top: 16px; font-size: 14px;">
-            ⚠️ Some data may be estimated due to API limitations
-          </p>
-        ` : `
-          <p style="background-color: rgba(16, 185, 129, 0.1); color: #10b981; padding: 12px; border-radius: 8px; margin-top: 16px;">
-            ✅ Analysis completed using real X API data
-          </p>
-        `}
-      </div>
-    `;
+      if (!profileImage) {
+        avatarDiv.textContent = (data.profile?.displayName || data.displayName || data.profile?.username || data.username || 'U')[0].toUpperCase();
+      }
+
+      const profileInfoDiv = document.createElement('div');
+      profileInfoDiv.style.cssText = 'flex: 1;';
+      profileInfoDiv.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+          <h2 style="margin: 0; font-size: 24px; font-weight: 700;">${data.profile?.displayName || data.displayName || data.profile?.username || data.username}</h2>
+          ${(data.profile?.verified || data.verified) ? '<span style="color: #1da1f2; font-size: 20px;">✓</span>' : ''}
+        </div>
+        <div style="opacity: 0.9; font-size: 16px; margin-bottom: 8px;">@${data.profile?.username || data.username}</div>
+        ${(data.profile?.bio || data.bio) ? `<div style="opacity: 0.8; font-size: 14px; line-height: 1.4; max-width: 400px;">${data.profile.bio || data.bio}</div>` : ''}
+        ${(data.profile?.location || data.location) ? `<div style="opacity: 0.7; font-size: 12px; margin-top: 4px;">📍 ${data.profile.location || data.location}</div>` : ''}
+      `;
+
+      headerDiv.appendChild(avatarDiv);
+      headerDiv.appendChild(profileInfoDiv);
+      resultsDiv.appendChild(headerDiv);
+
+      // Metrics cards
+      const metricsDiv = document.createElement('div');
+      metricsDiv.style.cssText = `
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: 16px;
+        margin-bottom: 24px;
+      `;
+
+      const metrics = [
+        { label: 'Followers', value: data.metrics?.followers || data.profile?.followers || 0, color: '#1da1f2', icon: '👥' },
+        { label: 'Following', value: data.metrics?.following || data.profile?.following || 0, color: '#17bf63', icon: '➡️' },
+        { label: 'Tweets', value: data.metrics?.tweets || data.profile?.tweets || 0, color: '#f45d22', icon: '📝' },
+        { label: 'Listed', value: data.metrics?.listed || data.profile?.listed || 0, color: '#794bc4', icon: '📋' }
+      ];
+
+      metrics.forEach(metric => {
+        const metricCard = document.createElement('div');
+        metricCard.style.cssText = `
+          background: white;
+          border-radius: 12px;
+          padding: 16px;
+          text-align: center;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+          border: 1px solid #e1e8ed;
+          transition: transform 0.2s ease;
+        `;
+        
+        metricCard.innerHTML = `
+          <div style="font-size: 24px; margin-bottom: 8px;">${metric.icon}</div>
+          <div style="font-size: 24px; font-weight: 700; color: ${metric.color}; margin-bottom: 4px;">
+            ${UIHelpers.formatNumber(metric.value)}
+          </div>
+          <div style="font-size: 14px; color: #536471; font-weight: 500;">${metric.label}</div>
+        `;
+        
+        metricsDiv.appendChild(metricCard);
+      });
+
+      resultsDiv.appendChild(metricsDiv);
+
+      // Influence Score (replaces Health Score)
+      if (data.analysis?.influenceScore !== undefined) {
+        const scoreDiv = document.createElement('div');
+        scoreDiv.style.cssText = `
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          border-radius: 16px;
+          padding: 20px;
+          color: white;
+          margin-bottom: 24px;
+          position: relative;
+          overflow: hidden;
+        `;
+
+        const score = data.analysis.influenceScore || 0;
+        const category = data.analysis.category || 'Unknown';
+        
+        scoreDiv.innerHTML = `
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+            <h3 style="margin: 0; font-size: 18px; font-weight: 600;">Influence Score</h3>
+            <div style="font-size: 24px; font-weight: 700;">${score}/100</div>
+          </div>
+          <div style="background: rgba(255,255,255,0.2); border-radius: 8px; height: 8px; margin-bottom: 12px; overflow: hidden;">
+            <div style="background: linear-gradient(90deg, #10b981, #34d399); height: 100%; width: ${score}%; transition: width 1s ease;"></div>
+          </div>
+          <div style="font-size: 14px; opacity: 0.9;">Category: <strong>${category}</strong></div>
+        `;
+
+        resultsDiv.appendChild(scoreDiv);
+      }
+
+      // Insights section
+      if (data.analysis?.insights && data.analysis.insights.length > 0) {
+        const insightsDiv = document.createElement('div');
+        insightsDiv.style.cssText = `
+          background: white;
+          border-radius: 12px;
+          padding: 20px;
+          margin-bottom: 24px;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+          border: 1px solid #e1e8ed;
+        `;
+
+        const headerDiv = document.createElement('div');
+        headerDiv.style.cssText = `
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin-bottom: 16px;
+          padding-bottom: 12px;
+          border-bottom: 1px solid #e1e8ed;
+        `;
+        headerDiv.innerHTML = `
+          <span style="font-size: 18px;">💡</span>
+          <h3 style="margin: 0; font-size: 16px; font-weight: 600; color: #0f1419;">Key Insights</h3>
+        `;
+
+        const insightsContainer = document.createElement('div');
+        insightsContainer.style.cssText = 'display: flex; flex-direction: column; gap: 8px;';
+
+        data.analysis.insights.forEach(insight => {
+          const insightDiv = document.createElement('div');
+          insightDiv.style.cssText = `
+            padding: 12px;
+            background: #f7f9fa;
+            border-radius: 8px;
+            border-left: 4px solid #1d9bf0;
+            font-size: 14px;
+            color: #0f1419;
+            line-height: 1.4;
+          `;
+          insightDiv.textContent = insight;
+          insightsContainer.appendChild(insightDiv);
+        });
+
+        insightsDiv.appendChild(headerDiv);
+        insightsDiv.appendChild(insightsContainer);
+        resultsDiv.appendChild(insightsDiv);
+      }
+
+      // Analysis sections
+      const sectionsDiv = document.createElement('div');
+      sectionsDiv.style.cssText = 'display: flex; flex-direction: column; gap: 20px;';
+
+      // Tweet Analysis
+      if (data.analysis?.tweetAnalysis) {
+        const tweetDiv = this.createAnalysisSection('Tweet Analysis', '📝', data.analysis.tweetAnalysis, [
+          { label: 'Total Tweets', value: data.analysis.tweetAnalysis.totalTweets || 0 },
+          { label: 'Avg Likes', value: UIHelpers.formatNumber(Math.round(data.analysis.tweetAnalysis.avgLikes || 0)) },
+          { label: 'Avg Retweets', value: UIHelpers.formatNumber(Math.round(data.analysis.tweetAnalysis.avgRetweets || 0)) },
+          { label: 'Activity Level', value: data.analysis.tweetAnalysis.recentActivity || 'Unknown' }
+        ]);
+        sectionsDiv.appendChild(tweetDiv);
+      }
+
+      // Engagement Analysis (fallback to old structure)
+      if (data.engagementAnalysis) {
+        const engagementDiv = this.createAnalysisSection('Engagement Analysis', '💬', data.engagementAnalysis, [
+          { label: 'Avg Likes', value: UIHelpers.formatNumber(data.engagementAnalysis.avgLikes || 0) },
+          { label: 'Avg Retweets', value: UIHelpers.formatNumber(data.engagementAnalysis.avgRetweets || 0) },
+          { label: 'Avg Replies', value: UIHelpers.formatNumber(data.engagementAnalysis.avgReplies || 0) },
+          { label: 'Engagement Rate', value: `${data.engagementAnalysis.engagementRate || 0}%` }
+        ]);
+        sectionsDiv.appendChild(engagementDiv);
+      }
+
+      // Recommendations
+      if (data.recommendations && data.recommendations.length > 0) {
+        const recommendationsDiv = this.createRecommendationsSection(data.recommendations);
+        sectionsDiv.appendChild(recommendationsDiv);
+      }
+
+      resultsDiv.appendChild(sectionsDiv);
+
+      // Analysis metadata
+      const metadataDiv = document.createElement('div');
+      metadataDiv.style.cssText = `
+        background: #f7f9fa;
+        border-radius: 12px;
+        padding: 16px;
+        margin-top: 24px;
+        font-size: 12px;
+        color: #536471;
+        border: 1px solid #e1e8ed;
+      `;
+
+      const analysisDate = data.analysis?.lastAnalyzed ? new Date(data.analysis.lastAnalyzed).toLocaleString() : 
+                           data.analysisDate ? new Date(data.analysisDate).toLocaleString() : 'Unknown';
+      const dataSource = data.analysis?.source || data.dataSource || 'Unknown';
+      const tweetsAnalyzed = data.analysis?.tweetAnalysis?.totalTweets || data.tweetsAnalyzed || 0;
+      const accountAge = data.profile?.accountAge ? `${data.profile.accountAge} days` : 'Unknown';
+
+      metadataDiv.innerHTML = `
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+          <div><strong>Analysis Date:</strong> ${analysisDate}</div>
+          <div><strong>Data Source:</strong> ${dataSource}</div>
+          <div><strong>Tweets Analyzed:</strong> ${tweetsAnalyzed}</div>
+          <div><strong>Account Age:</strong> ${accountAge}</div>
+        </div>
+      `;
+
+      resultsDiv.appendChild(metadataDiv);
+
+      // Save to history
+      this.saveToHistory(username, data);
+
+      console.log('✅ Results displayed successfully');
+
+    } catch (error) {
+      console.error('❌ Error displaying results:', error);
+      UIHelpers.showToast('Error displaying results', 'error');
+    }
   }
 
-  static displayFallbackResults(username) {
-    console.log('⚠️ Displaying fallback results for:', username);
-    
-    const resultsContainer = document.getElementById('results-container');
-    if (!resultsContainer) return;
+  static createAnalysisSection(title, icon, data, metrics) {
+    const sectionDiv = document.createElement('div');
+    sectionDiv.style.cssText = `
+      background: white;
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      border: 1px solid #e1e8ed;
+    `;
 
-    username = username.replace(/^@/, '');
-    resultsContainer.style.display = 'block';
+    const headerDiv = document.createElement('div');
+    headerDiv.style.cssText = `
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #e1e8ed;
+    `;
+    headerDiv.innerHTML = `
+      <span style="font-size: 18px;">${icon}</span>
+      <h3 style="margin: 0; font-size: 16px; font-weight: 600; color: #0f1419;">${title}</h3>
+    `;
 
-    resultsContainer.innerHTML = `
-      <div style="background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-        <div style="background-color: rgba(244, 93, 34, 0.1); color: #f45d22; padding: 8px 16px; border-radius: 8px; margin-bottom: 16px; font-weight: 600; text-align: center;">
-          ⚠️ X API unavailable - showing estimated data
-        </div>
-        
-        <h3>Analysis for @${username}</h3>
-        
-        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 16px 0;">
-          <div style="background-color: rgba(0, 0, 0, 0.03); border-radius: 12px; padding: 12px; text-align: center;">
-            <div style="font-size: 20px; font-weight: 700; color: #1d9bf0; margin-bottom: 4px;">1.5K</div>
-            <div style="font-size: 12px; color: #536471;">Followers</div>
-          </div>
-          <div style="background-color: rgba(0, 0, 0, 0.03); border-radius: 12px; padding: 12px; text-align: center;">
-            <div style="font-size: 20px; font-weight: 700; color: #1d9bf0; margin-bottom: 4px;">400</div>
-            <div style="font-size: 12px; color: #536471;">Following</div>
+    const metricsDiv = document.createElement('div');
+    metricsDiv.style.cssText = `
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 12px;
+    `;
+
+    metrics.forEach(metric => {
+      const metricDiv = document.createElement('div');
+      metricDiv.style.cssText = `
+        text-align: center;
+        padding: 12px;
+        background: #f7f9fa;
+        border-radius: 8px;
+        border: 1px solid #e1e8ed;
+      `;
+      metricDiv.innerHTML = `
+        <div style="font-size: 18px; font-weight: 700; color: #0f1419; margin-bottom: 4px;">
+          ${metric.value}
             </div>
-          <div style="background-color: rgba(0, 0, 0, 0.03); border-radius: 12px; padding: 12px; text-align: center;">
-            <div style="font-size: 20px; font-weight: 700; color: #1d9bf0; margin-bottom: 4px;">2.2K</div>
-            <div style="font-size: 12px; color: #536471;">Tweets</div>
-            </div>
-          <div style="background-color: rgba(0, 0, 0, 0.03); border-radius: 12px; padding: 12px; text-align: center;">
-            <div style="font-size: 20px; font-weight: 700; color: #f59e0b; margin-bottom: 4px;">Average</div>
-            <div style="font-size: 12px; color: #536471;">Engagement</div>
-          </div>
-          </div>
-        
-        <div style="background-color: rgba(0, 0, 0, 0.02); padding: 16px; border-radius: 12px;">
-          <h4 style="margin: 0 0 12px 0;">📈 General Recommendations</h4>
-          <ul style="margin: 0; padding-left: 20px;">
-            <li style="margin-bottom: 8px;">Post consistently to increase visibility</li>
-            <li style="margin-bottom: 8px;">Engage with comments to build community</li>
-            <li style="margin-bottom: 8px;">Use visual content for higher engagement</li>
-            <li style="margin-bottom: 8px;">Participate in relevant conversations</li>
-          </ul>
-        </div>
-        
-        <p style="background-color: rgba(244, 93, 34, 0.1); color: #f45d22; padding: 12px; border-radius: 8px; margin-top: 16px; font-size: 14px;">
-          Note: This is estimated data. For accurate analysis, please ensure the X API is correctly configured.
-        </p>
+        <div style="font-size: 12px; color: #536471; font-weight: 500;">
+          ${metric.label}
       </div>
     `;
+      metricsDiv.appendChild(metricDiv);
+    });
+
+    sectionDiv.appendChild(headerDiv);
+    sectionDiv.appendChild(metricsDiv);
+
+    // Add themes if available
+    if (data.themes && data.themes.length > 0) {
+      const themesDiv = document.createElement('div');
+      themesDiv.style.cssText = 'margin-top: 16px;';
+      
+      const themesHeader = document.createElement('div');
+      themesHeader.style.cssText = 'font-size: 14px; font-weight: 600; color: #0f1419; margin-bottom: 8px;';
+      themesHeader.textContent = 'Content Themes:';
+      
+      const themesContainer = document.createElement('div');
+      themesContainer.style.cssText = 'display: flex; flex-wrap: wrap; gap: 8px;';
+      
+      data.themes.forEach(theme => {
+        const themeTag = document.createElement('span');
+        themeTag.style.cssText = `
+          background: linear-gradient(135deg, #667eea, #764ba2);
+          color: white;
+          padding: 4px 12px;
+          border-radius: 16px;
+          font-size: 12px;
+          font-weight: 500;
+        `;
+        themeTag.textContent = `${theme.theme} (${theme.relevance}%)`;
+        themesContainer.appendChild(themeTag);
+      });
+      
+      themesDiv.appendChild(themesHeader);
+      themesDiv.appendChild(themesContainer);
+      sectionDiv.appendChild(themesDiv);
+    }
+
+    return sectionDiv;
+  }
+
+  static createRecommendationsSection(recommendations) {
+    const sectionDiv = document.createElement('div');
+    sectionDiv.style.cssText = `
+      background: white;
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      border: 1px solid #e1e8ed;
+    `;
+
+    const headerDiv = document.createElement('div');
+    headerDiv.style.cssText = `
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #e1e8ed;
+    `;
+    headerDiv.innerHTML = `
+      <span style="font-size: 18px;">💡</span>
+      <h3 style="margin: 0; font-size: 16px; font-weight: 600; color: #0f1419;">Growth Recommendations</h3>
+    `;
+
+    const recommendationsContainer = document.createElement('div');
+    recommendationsContainer.style.cssText = 'display: flex; flex-direction: column; gap: 12px;';
+
+    recommendations.forEach(rec => {
+      const recDiv = document.createElement('div');
+      recDiv.style.cssText = `
+        padding: 16px;
+        background: #f7f9fa;
+        border-radius: 8px;
+        border-left: 4px solid ${rec.priority === 'High' ? '#f45d22' : rec.priority === 'Medium' ? '#f59e0b' : '#10b981'};
+      `;
+
+      recDiv.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+          <div style="font-weight: 600; color: #0f1419; font-size: 14px;">${rec.title}</div>
+          <span style="
+            background: ${rec.priority === 'High' ? '#f45d22' : rec.priority === 'Medium' ? '#f59e0b' : '#10b981'};
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+          ">${rec.priority}</span>
+          </div>
+        <div style="font-size: 13px; color: #536471; line-height: 1.4;">
+          ${rec.description}
+          </div>
+        <div style="font-size: 11px; color: #657786; margin-top: 4px; text-transform: uppercase; font-weight: 500;">
+          ${rec.type}
+          </div>
+      `;
+
+      recommendationsContainer.appendChild(recDiv);
+    });
+
+    sectionDiv.appendChild(headerDiv);
+    sectionDiv.appendChild(recommendationsContainer);
+
+    return sectionDiv;
   }
 
   static saveToHistory(username, data) {
     chrome.storage.local.get(['analysisHistory'], (result) => {
       const history = result.analysisHistory || [];
       
-      const user = data.user || {};
-      const metrics = user.public_metrics || {};
+      const userData = data.data || data.user || data;
+      const metrics = userData.metrics || userData.public_metrics || {};
       
       const historyItem = {
         username: username,
         timestamp: Date.now(),
         metrics: {
-          followers: metrics.followers_count || 0,
+          followers: metrics.followers || metrics.followers_count || 0,
           engagement: data.analytics?.engagement_rate || '1.2%'
         }
       };

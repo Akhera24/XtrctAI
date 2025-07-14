@@ -1,43 +1,48 @@
 // env.js - Environment configuration for X-Analyzer
-// This module exports configuration objects for Twitter and Grok AI APIs
-// Environment variables are automatically injected by dotenv-webpack during build
+// This module exports configuration objects for Twitter and X API integration
+// ⚠️ IMPORTANT: Replace the placeholder tokens below with your real X API credentials
 
-// Define defaults that will be used if environment variables aren't available
-const fallbacks = {
+console.log('🔧 Loading X Profile Analyzer Environment Configuration...');
+
+// ⚠️ SETUP REQUIRED: Get your real X API credentials from https://developer.twitter.com/
+// Updated with real X API credentials
+const DEFAULT_CONFIG = {
   twitter: {
     config1: {
-      xApiKey: '***REMOVED_API_KEY***',
-      clientId: 'UWJReXE3QkRDa2ZRcWtQTjlfbmY6MTpjaQ',
-      clientSecret: '***REMOVED_CLIENT_SECRET***',
-      bearerToken: '***REMOVED_BEARER_TOKEN***',
-      accessToken: '***REMOVED_ACCESS_TOKEN***',
-      accessTokenSecret: '***REMOVED_ACCESS_TOKEN_SECRET***',
+      xApiKey: '***REMOVED_API_KEY***', // Your X API Key
+      xApiKeySecret: '***REMOVED_API_SECRET***', // Your X API Key Secret
+      clientId: 'UWJReXE3QkRDa2ZRcWtQTjlfbmY6MTpjaQ', // Your Client ID
+      clientSecret: '***REMOVED_CLIENT_SECRET***', // Your Client Secret
+      bearerToken: '***REMOVED_BEARER_TOKEN***', // Your actual X API Bearer Token
+      accessToken: '***REMOVED_ACCESS_TOKEN***', // Your Access Token
+      accessTokenSecret: '***REMOVED_ACCESS_TOKEN_SECRET***', // Your Access Token Secret
       baseUrl: 'https://api.twitter.com/2'
     },
     config2: {
-      xApiKey: '***REMOVED_API_KEY***',
-      xApiKeySecret: '***REMOVED_API_SECRET***',
-      clientId: 'NkQ4LUtHV213R1FUN1cycDNlSFI6MTpjaQ',
-      clientSecret: '***REMOVED_CLIENT_SECRET***',
-      bearerToken: '***REMOVED_BEARER_TOKEN***',
-      accessToken: '***REMOVED_ACCESS_TOKEN***',
-      accessTokenSecret: '***REMOVED_ACCESS_TOKEN_SECRET***',
+      bearerToken: '***REMOVED_BEARER_TOKEN***', // Backup Bearer Token
+      xApiKey: '***REMOVED_API_KEY***', // Backup API Key
+      xApiKeySecret: '***REMOVED_API_SECRET***', // Backup API Key Secret
+      clientId: 'UWJReXE3QkRDa2ZRcWtQTjlfbmY6MTpjaQ', // Backup Client ID
+      clientSecret: '***REMOVED_CLIENT_SECRET***', // Backup Client Secret
+      accessToken: '***REMOVED_ACCESS_TOKEN***', // Backup Access Token
+      accessTokenSecret: '***REMOVED_ACCESS_TOKEN_SECRET***', // Backup Access Token Secret
       baseUrl: 'https://api.twitter.com/2'
     }
   },
   grokAi: {
-    apiKey: '***REMOVED_XAI_KEY***',
+    // Optional: Grok AI integration (if available)
+    apiKey: '', // Your Grok AI API key
     baseUrl: 'https://api.grok.com/v1'
   },
   proxy: {
-    enabled: true,
-    host: '143.198.111.238',
+    enabled: false, // Temporarily disabled until proxy server credentials are updated
+    host: '143.198.111.238', // DigitalOcean proxy server
     port: '3000',
-    protocol: 'https',
+    protocol: 'http',
     path: '/api/proxy',
     auth: {
-      username: 'xanalyzer',
-      password: 'pr0xy@cce$$' 
+      username: '', // Contact admin for proxy credentials
+      password: ''
     },
     fallbackToDirect: true,
     timeout: 15000,
@@ -46,167 +51,188 @@ const fallbacks = {
   }
 };
 
-// Safer way to access environment variables in a browser extension
+// Environment variable access helper
 function getEnvVar(name, defaultValue) {
   try {
-    // First try global __ENV__ from webpack DefinePlugin
-    if (typeof __ENV__ !== 'undefined' && __ENV__ && __ENV__[name] !== undefined) {
-      return __ENV__[name];
+    // Check if we're in a browser extension environment
+    if (typeof chrome !== 'undefined' && chrome.storage) {
+      // We'll handle this via storage instead of environment variables
+      return defaultValue;
     }
     
-    // For development/build-time only (will not exist in browser)
+    // For Node.js/server environments
     if (typeof process !== 'undefined' && process.env && process.env[name] !== undefined) {
       return process.env[name];
     }
+    
+    // For webpack DefinePlugin
+    if (typeof __ENV__ !== 'undefined' && __ENV__ && __ENV__[name] !== undefined) {
+      return __ENV__[name];
+    }
   } catch (e) {
-    console.log(`Error accessing environment variable ${name}: ${e.message}`);
+    console.warn(`Error accessing environment variable ${name}: ${e.message}`);
   }
   
-  // Return fallback value if no environment variable found
   return defaultValue;
 }
 
-// Twitter API configurations
-// We maintain two separate configs for redundancy and rate limit management
+// Main configuration object
 export const twitter = {
-  // Primary Twitter API configuration
   config1: {
-    xApiKey: getEnvVar('TWITTER_API_KEY', getEnvVar('TWITTER_API_1_X_API_KEY', fallbacks.twitter.config1.xApiKey)),
-    clientId: getEnvVar('TWITTER_API_1_CLIENT_ID', fallbacks.twitter.config1.clientId),
-    clientSecret: getEnvVar('TWITTER_API_SECRET', getEnvVar('TWITTER_API_1_CLIENT_SECRET', fallbacks.twitter.config1.clientSecret)),
-    bearerToken: getEnvVar('TWITTER_BEARER_TOKEN', getEnvVar('TWITTER_API_1_BEARER_TOKEN', fallbacks.twitter.config1.bearerToken)),
-    accessToken: getEnvVar('TWITTER_API_1_ACCESS_TOKEN', fallbacks.twitter.config1.accessToken),
-    accessTokenSecret: getEnvVar('TWITTER_API_1_ACCESS_TOKEN_SECRET', fallbacks.twitter.config1.accessTokenSecret),
-    baseUrl: getEnvVar('TWITTER_API_1_BASE_URL', fallbacks.twitter.config1.baseUrl)
+    xApiKey: getEnvVar('TWITTER_API_KEY', DEFAULT_CONFIG.twitter.config1.xApiKey),
+    xApiKeySecret: getEnvVar('TWITTER_API_KEY_SECRET', DEFAULT_CONFIG.twitter.config1.xApiKeySecret),
+    clientId: getEnvVar('TWITTER_CLIENT_ID', DEFAULT_CONFIG.twitter.config1.clientId),
+    clientSecret: getEnvVar('TWITTER_CLIENT_SECRET', DEFAULT_CONFIG.twitter.config1.clientSecret),
+    bearerToken: getEnvVar('TWITTER_BEARER_TOKEN', DEFAULT_CONFIG.twitter.config1.bearerToken),
+    accessToken: getEnvVar('TWITTER_ACCESS_TOKEN', DEFAULT_CONFIG.twitter.config1.accessToken),
+    accessTokenSecret: getEnvVar('TWITTER_ACCESS_TOKEN_SECRET', DEFAULT_CONFIG.twitter.config1.accessTokenSecret),
+    baseUrl: getEnvVar('TWITTER_API_BASE_URL', DEFAULT_CONFIG.twitter.config1.baseUrl)
   },
-  // Secondary/backup Twitter API configuration
   config2: {
-    xApiKey: getEnvVar('TWITTER_API_2_X_API_KEY', fallbacks.twitter.config2.xApiKey),
-    xApiKeySecret: getEnvVar('TWITTER_API_2_X_API_KEY_SECRET', fallbacks.twitter.config2.xApiKeySecret),
-    clientId: getEnvVar('TWITTER_API_2_CLIENT_ID', fallbacks.twitter.config2.clientId),
-    clientSecret: getEnvVar('TWITTER_API_2_CLIENT_SECRET', fallbacks.twitter.config2.clientSecret),
-    bearerToken: getEnvVar('TWITTER_API_2_BEARER_TOKEN', fallbacks.twitter.config2.bearerToken),
-    accessToken: getEnvVar('TWITTER_API_2_ACCESS_TOKEN', fallbacks.twitter.config2.accessToken),
-    accessTokenSecret: getEnvVar('TWITTER_API_2_ACCESS_TOKEN_SECRET', fallbacks.twitter.config2.accessTokenSecret),
-    baseUrl: getEnvVar('TWITTER_API_2_BASE_URL', fallbacks.twitter.config2.baseUrl)
+    xApiKey: getEnvVar('TWITTER_API_2_KEY', DEFAULT_CONFIG.twitter.config2.xApiKey),
+    xApiKeySecret: getEnvVar('TWITTER_API_2_KEY_SECRET', DEFAULT_CONFIG.twitter.config2.xApiKeySecret),
+    clientId: getEnvVar('TWITTER_CLIENT_2_ID', DEFAULT_CONFIG.twitter.config2.clientId),
+    clientSecret: getEnvVar('TWITTER_CLIENT_2_SECRET', DEFAULT_CONFIG.twitter.config2.clientSecret),
+    bearerToken: getEnvVar('TWITTER_BEARER_2_TOKEN', DEFAULT_CONFIG.twitter.config2.bearerToken),
+    accessToken: getEnvVar('TWITTER_ACCESS_2_TOKEN', DEFAULT_CONFIG.twitter.config2.accessToken),
+    accessTokenSecret: getEnvVar('TWITTER_ACCESS_2_TOKEN_SECRET', DEFAULT_CONFIG.twitter.config2.accessTokenSecret),
+    baseUrl: getEnvVar('TWITTER_API_2_BASE_URL', DEFAULT_CONFIG.twitter.config2.baseUrl)
   }
 };
-  
-// Grok AI API configuration
-// Used for AI-powered content analysis and recommendations
+
 export const grokAi = {
-  apiKey: getEnvVar('GROK_AI_API_KEY', fallbacks.grokAi.apiKey),
-  baseUrl: getEnvVar('GROK_AI_BASE_URL', fallbacks.grokAi.baseUrl)
+  apiKey: getEnvVar('GROK_AI_API_KEY', DEFAULT_CONFIG.grokAi.apiKey),
+  baseUrl: getEnvVar('GROK_AI_BASE_URL', DEFAULT_CONFIG.grokAi.baseUrl)
 };
 
-// DigitalOcean proxy configuration
 export const proxyConfig = {
-  enabled: getEnvVar('DO_PROXY_ENABLED', 'true') === 'true',
-  host: getEnvVar('DO_PROXY_HOST', fallbacks.proxy.host),
-  port: getEnvVar('DO_PROXY_PORT', fallbacks.proxy.port),
-  protocol: getEnvVar('DO_PROXY_PROTOCOL', fallbacks.proxy.protocol),
-  path: getEnvVar('DO_PROXY_PATH', fallbacks.proxy.path),
+  enabled: getEnvVar('PROXY_ENABLED', 'true') === 'true',
+  host: getEnvVar('PROXY_HOST', DEFAULT_CONFIG.proxy.host),
+  port: getEnvVar('PROXY_PORT', DEFAULT_CONFIG.proxy.port),
+  protocol: getEnvVar('PROXY_PROTOCOL', DEFAULT_CONFIG.proxy.protocol),
+  path: getEnvVar('PROXY_PATH', DEFAULT_CONFIG.proxy.path),
   auth: {
-    username: getEnvVar('DO_PROXY_USERNAME', fallbacks.proxy.auth.username),
-    password: getEnvVar('DO_PROXY_PASSWORD', fallbacks.proxy.auth.password)
+    username: getEnvVar('PROXY_USERNAME', DEFAULT_CONFIG.proxy.auth.username),
+    password: getEnvVar('PROXY_PASSWORD', DEFAULT_CONFIG.proxy.auth.password)
   },
-  fallbackToDirect: getEnvVar('DO_PROXY_FALLBACK_DIRECT', 'true') === 'true',
-  timeout: parseInt(getEnvVar('DO_PROXY_TIMEOUT', fallbacks.proxy.timeout)),
-  retryAttempts: parseInt(getEnvVar('DO_PROXY_RETRY_ATTEMPTS', fallbacks.proxy.retryAttempts)),
-  retryDelay: parseInt(getEnvVar('DO_PROXY_RETRY_DELAY', fallbacks.proxy.retryDelay))
+  fallbackToDirect: getEnvVar('PROXY_FALLBACK_DIRECT', 'true') === 'true',
+  timeout: parseInt(getEnvVar('PROXY_TIMEOUT', DEFAULT_CONFIG.proxy.timeout)),
+  retryAttempts: parseInt(getEnvVar('PROXY_RETRY_ATTEMPTS', DEFAULT_CONFIG.proxy.retryAttempts)),
+  retryDelay: parseInt(getEnvVar('PROXY_RETRY_DELAY', DEFAULT_CONFIG.proxy.retryDelay))
 };
 
-// Construct the full proxy URL for convenient access
+// Construct full proxy URL
 export const proxyUrl = `${proxyConfig.protocol}://${proxyConfig.host}:${proxyConfig.port}${proxyConfig.path}`;
 
 // Token validation functions
 const isValidBearerToken = (token) => {
-  // Enhanced validation for bearer tokens
   if (!token || typeof token !== 'string') return false;
   
-  // Clean the token from any potential URL encoding
-  let cleanedToken = token;
-  if (token.includes('%')) {
-    try {
-      cleanedToken = decodeURIComponent(token);
-    } catch (e) {
-      console.warn('Error decoding bearer token, using as-is');
-    }
-  }
-  
-  // Bearer tokens should start with AAAAA and be long enough
-  const isValid = cleanedToken.trim().startsWith('AAAAA') && cleanedToken.trim().length > 50;
-  
-  // Log validation for debugging
-  console.log(`Bearer token validation: token starts with "${cleanedToken.substring(0, 5)}...", length: ${cleanedToken.length}, valid: ${isValid}`);
-  
-  return isValid;
+  // Real X API bearer tokens start with 'AAAA' and are long
+  // They should not be URL encoded in our config
+  const cleanToken = token.trim();
+  return cleanToken.startsWith('AAAA') && cleanToken.length > 80 && !cleanToken.includes('%');
 };
 
 const isValidApiKey = (key) => {
-  // Basic API key validation
   return !!key && typeof key === 'string' && key.trim().length >= 10;
 };
 
-// Validate API credentials
+// Enhanced validation function
 export function validateApiKeys() {
-  // Check primary configuration
   const config1Valid = {
     bearerToken: isValidBearerToken(twitter.config1.bearerToken),
     apiKey: isValidApiKey(twitter.config1.xApiKey),
     clientId: isValidApiKey(twitter.config1.clientId),
     clientSecret: isValidApiKey(twitter.config1.clientSecret),
-    accessToken: isValidApiKey(twitter.config1.accessToken),
     overall: false
   };
   
-  // Set overall status for config1
-  config1Valid.overall = config1Valid.bearerToken && config1Valid.apiKey;
+  config1Valid.overall = config1Valid.bearerToken || (config1Valid.apiKey && config1Valid.clientSecret);
   
-  // Check secondary configuration
   const config2Valid = {
     bearerToken: isValidBearerToken(twitter.config2.bearerToken),
     apiKey: isValidApiKey(twitter.config2.xApiKey),
-    apiKeySecret: isValidApiKey(twitter.config2.xApiKeySecret),
     clientId: isValidApiKey(twitter.config2.clientId),
     clientSecret: isValidApiKey(twitter.config2.clientSecret),
-    accessToken: isValidApiKey(twitter.config2.accessToken),
     overall: false
   };
   
-  // Set overall status for config2
-  config2Valid.overall = config2Valid.bearerToken && config2Valid.apiKey;
+  config2Valid.overall = config2Valid.bearerToken || (config2Valid.apiKey && config2Valid.clientSecret);
   
   return {
     config1: config1Valid,
     config2: config2Valid,
     anyValid: config1Valid.overall || config2Valid.overall,
-    detailedStatus: {
-      config1: config1Valid,
-      config2: config2Valid
-    }
+    hasValidBearerToken: config1Valid.bearerToken || config2Valid.bearerToken,
+    needsSetup: !config1Valid.overall && !config2Valid.overall
   };
 }
 
-// Run validation on startup and log results
-const apiValidation = validateApiKeys();
+// Configuration status and setup guidance
+const validation = validateApiKeys();
 
-// Log configuration and validation status
-console.log('Environment loaded status:', {
-  twitterConfig1Bearer: twitter.config1.bearerToken ? 'Available' : 'Missing',
-  twitterConfig2Bearer: twitter.config2.bearerToken ? 'Available' : 'Missing',
-  grokApiKey: grokAi.apiKey ? 'Available' : 'Missing',
-  proxyConfig: {
-    enabled: proxyConfig.enabled,
-    host: proxyConfig.host ? 'Available' : 'Missing',
-    url: proxyUrl,
-    auth: proxyConfig.auth.username && proxyConfig.auth.password ? 'Available' : 'Missing'
+if (validation.needsSetup) {
+  console.warn(`
+🚨 X API SETUP REQUIRED 🚨
+
+Your X Profile Analyzer needs real API credentials to fetch live data.
+
+📋 SETUP INSTRUCTIONS:
+1. Go to https://developer.twitter.com/en/portal/dashboard
+2. Create a new app or use an existing one
+3. Get your Bearer Token from the "Keys and tokens" section
+4. Update the tokens in env.js file:
+   - Replace bearerToken with your real token
+   - Optionally add API Key and Client credentials
+
+🔧 CURRENT STATUS:
+- Config 1 Bearer Token: ${validation.config1.bearerToken ? '✅ Valid' : '❌ Missing/Invalid'}
+- Config 2 Bearer Token: ${validation.config2.bearerToken ? '✅ Valid' : '❌ Missing/Invalid'}
+- Proxy Server: ${proxyConfig.enabled ? '✅ Enabled' : '❌ Disabled'}
+
+⚠️ Without valid credentials, the extension will show estimated/fallback data only.
+  `);
+} else {
+  console.log('✅ X API credentials configured successfully');
+}
+
+// Enhanced logging
+console.log('🔧 Environment Configuration Status:', {
+  twitterConfig1: {
+    hasApiKey: !!twitter.config1.xApiKey,
+    hasBearerToken: validation.config1.bearerToken,
+    hasClientCredentials: !!(twitter.config1.clientId && twitter.config1.clientSecret),
+    valid: validation.config1.overall
   },
-  apiValidation: {
-    anyValid: apiValidation.anyValid,
-    config1Valid: apiValidation.config1.overall,
-    config2Valid: apiValidation.config2.overall
-  }
+  twitterConfig2: {
+    hasApiKey: !!twitter.config2.xApiKey,
+    hasBearerToken: validation.config2.bearerToken,
+    hasClientCredentials: !!(twitter.config2.clientId && twitter.config2.clientSecret),
+    valid: validation.config2.overall
+  },
+  grokAi: {
+    hasApiKey: !!grokAi.apiKey
+  },
+  proxy: {
+    enabled: proxyConfig.enabled,
+    url: proxyUrl,
+    hasAuth: !!(proxyConfig.auth.username && proxyConfig.auth.password)
+  },
+  setupRequired: validation.needsSetup
 });
 
-export { apiValidation };
+// Export validation results
+export { validation as apiValidation };
+
+// Make available globally for debugging
+if (typeof window !== 'undefined') {
+  window.XAnalyzerEnv = {
+    twitter,
+    grokAi,
+    proxyConfig,
+    proxyUrl,
+    apiValidation: validation,
+    validateApiKeys
+  };
+}

@@ -1,193 +1,257 @@
 # ExtrctAI
 A social media app where you create posts see how much engagement or quality of the posts and have a centralized home feed with vids from different platforms with customizability for how you want your home feed to look. Also, you can highlight the best vids on your home feed for the app to recommend and to use when generating your own posts.
 
-# X-Analyzer - Twitter/X Profile Analyzer Chrome Extension
+# X Profile Analyzer Chrome Extension
 
-This Chrome extension analyzes Twitter/X profiles, providing engagement metrics, audience insights, and content recommendations.
+A powerful Chrome extension for analyzing X (Twitter) profiles with real-time data and AI-powered insights.
 
-## Features
+## 🚀 Features
 
-- Profile analysis with engagement metrics
-- Content strategy recommendations
-- Posting time optimization
-- API integration with Twitter/X
-- Proxy support for reliable API access
-- Caching for faster repeat analyses
+- **Real-time Profile Analysis**: Fetch live data directly from X API
+- **Comprehensive Metrics**: Followers, engagement rates, posting patterns, and more
+- **Growth Recommendations**: AI-powered suggestions for improving your X presence
+- **Content Strategy**: Personalized recommendations based on your content themes
+- **Historical Tracking**: Save and compare profile analyses over time
+- **Professional UI**: Clean, modern interface with smooth animations
 
-## How It Works
-
-### Architecture Overview
-
-The X-Analyzer extension consists of three main components:
-
-1. **Chrome Extension UI** - The user interface for interacting with the analyzer
-2. **Background Service** - Handles API requests and data processing
-3. **Proxy Server** - Optional server component for secure API access
-
-### Data Flow
-
-1. User enters a Twitter/X username in the extension popup
-2. The extension sends the request to the background script
-3. Background script either:
-   - Makes a direct API call to Twitter/X API (if credentials are configured)
-   - Routes the request through the proxy server (if enabled)
-4. The API response is processed, analyzed, and cached
-5. Results are displayed in the extension UI with metrics and recommendations
-
-### Key Components
-
-- **Popup UI (`popup.js`, `popup.html`)**: The main interface that users interact with
-- **Background Script (`background.js`)**: Handles message passing and API requests
-- **UI Helpers (`uiHelpers.js`)**: Manages loading states, toasts, and progress bars
-- **Direct Handler (`directHandler.js`)**: Processes user interactions and UI updates
-- **API Connection Manager**: Manages API credentials and connections
-- **Proxy Configuration**: Handles secure routing through the proxy server
-
-### Proxy Server
-
-The proxy server component:
-- Resolves CORS issues that prevent direct API access from extensions
-- Securely stores API credentials
-- Manages rate limiting across multiple users
-- Provides standardized error handling
-
-## Installation
+## 🔧 Setup Instructions
 
 ### Prerequisites
 
-- Node.js and npm installed on your system
-- Chrome browser
-- Twitter/X API credentials (optional but recommended)
+1. **X Developer Account**: You need access to the X API
+2. **Chrome Browser**: Version 88 or higher
+3. **Internet Connection**: For API calls and proxy server communication
 
-### Setup
+### Step 1: Get X API Credentials
 
-1. Clone this repository or download the source code:
+1. **Apply for X API Access**:
+   - Go to [X Developer Portal](https://developer.twitter.com/en/portal/dashboard)
+   - Sign up for a developer account if you don't have one
+   - Create a new project/app or use an existing one
 
-```bash
-git clone https://github.com/yourusername/x-analyzer.git
-cd x-analyzer
+2. **Get Your Bearer Token**:
+   - In your X Developer Portal dashboard
+   - Navigate to your project → App → "Keys and tokens"
+   - Generate a **Bearer Token** (this is the most important credential)
+   - Copy and save it securely
+
+3. **Optional - Get Additional Credentials**:
+   - **API Key** (Consumer Key)
+   - **API Key Secret** (Consumer Secret)
+   - **Client ID** and **Client Secret** (for OAuth 2.0)
+   - **Access Token** and **Access Token Secret** (for user context)
+
+### Step 2: Configure the Extension
+
+1. **Update API Credentials**:
+   ```javascript
+   // In env.js file, replace the empty strings with your real credentials:
+   const DEFAULT_CONFIG = {
+     twitter: {
+       config1: {
+         bearerToken: 'YOUR_REAL_BEARER_TOKEN_HERE', // Required
+         xApiKey: 'YOUR_API_KEY_HERE', // Optional but recommended
+         clientId: 'YOUR_CLIENT_ID_HERE', // Optional
+         clientSecret: 'YOUR_CLIENT_SECRET_HERE', // Optional
+         // ... other fields
+       }
+     }
+   };
+   ```
+
+2. **Important Security Notes**:
+   - Never commit real API keys to public repositories
+   - Consider using environment variables for production
+   - The extension uses a proxy server to avoid CORS issues
+
+### Step 3: Install the Extension
+
+1. **Load in Chrome**:
+   ```bash
+   # Clone the repository
+   git clone https://github.com/your-username/x-analyzer.git
+   cd x-analyzer
+   
+   # Open Chrome and go to chrome://extensions/
+   # Enable "Developer mode"
+   # Click "Load unpacked" and select the project folder
+   ```
+
+2. **Verify Installation**:
+   - Look for the X Profile Analyzer icon in your Chrome toolbar
+   - Click the icon to open the popup
+   - Check the console for any configuration warnings
+
+### Step 4: Test the Setup
+
+1. **Basic Connection Test**:
+   - Open the extension popup
+   - Go to the "Analyze" tab
+   - Try analyzing a public X profile (e.g., @elonmusk)
+
+2. **Check for Real Data**:
+   - Successfully analyzed profiles should show "✅ Analysis completed using real X API data"
+   - If you see "⚠️ Some data may be estimated due to API limitations", check your API credentials
+
+## 📊 Understanding API Rate Limits
+
+The X API has rate limits to prevent abuse:
+
+- **Bearer Token**: 300 requests per 15-minute window (per app)
+- **User Context**: Additional limits for user-specific data
+
+The extension automatically:
+- Tracks your rate limit usage
+- Switches between multiple configurations if available
+- Shows warnings when approaching limits
+- Provides fallback data when limits are exceeded
+
+## 🔧 Architecture Overview
+
+```
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
+│   Extension     │───▶│   Proxy Server   │───▶│    X API        │
+│   (Frontend)    │    │   (CORS Handler) │    │   (Real Data)   │
+└─────────────────┘    └──────────────────┘    └─────────────────┘
 ```
 
-2. Copy the example environment file and configure it with your credentials:
+### Why Use a Proxy Server?
 
-```bash
-cp .env.example .env
+1. **CORS Prevention**: Direct browser-to-X API calls are blocked by CORS policy
+2. **Credential Security**: API keys are not exposed in the browser
+3. **Rate Limit Management**: Centralized tracking and optimization
+4. **Caching**: Reduce redundant API calls
+
+## 🛠 Development
+
+### Local Development
+
+1. **Install Dependencies**:
+   ```bash
+   npm install
+   ```
+
+2. **Start Development Server** (for proxy):
+   ```bash
+   cd server
+   npm install
+   npm start
+   ```
+
+3. **Build Extension**:
+   ```bash
+   npm run build
+   ```
+
+### Environment Variables
+
+Create a `.env` file in the server directory:
+
+```env
+# Required
+TWITTER_API_BEARER_TOKEN=your_bearer_token_here
+
+# Optional
+TWITTER_API_KEY=your_api_key_here
+TWITTER_API_SECRET=your_api_secret_here
+PORT=3000
+
+# Proxy settings (if using external proxy)
+PROXY_HOST=your.proxy.host
+PROXY_PORT=3000
+PROXY_USERNAME=your_username
+PROXY_PASSWORD=your_password
 ```
 
-3. Edit the `.env` file with your Twitter API credentials and proxy settings:
+## 🐛 Troubleshooting
 
-```
-# Twitter API Credentials
-TWITTER_API_KEY=your_api_key
-TWITTER_API_SECRET=your_api_secret
-TWITTER_BEARER_TOKEN=your_bearer_token
+### Common Issues
 
-# DigitalOcean Proxy Configuration
-DO_PROXY_ENABLED=true
-DO_PROXY_HOST=143.198.111.238
-DO_PROXY_PORT=3000
-DO_PROXY_USERNAME=Akhera24
-DO_PROXY_PASSWORD=N5$Ny2_mGeJ8Y
-```
+1. **"API connection failed" Error**:
+   - Check your Bearer Token is valid and correctly formatted
+   - Ensure the proxy server is running (if using local setup)
+   - Verify your X Developer account has API access
 
-4. Install dependencies and build the extension:
+2. **"Rate limit exceeded" Warning**:
+   - Wait for the rate limit window to reset (15 minutes)
+   - Add a secondary API configuration for redundancy
+   - Consider upgrading your X API plan for higher limits
 
-```bash
-# Use the provided build script (recommended)
-./build.sh
+3. **"User not found" Error**:
+   - Verify the username is correct and the profile is public
+   - Some profiles may be private or suspended
+   - Check if the user has blocked API access
 
-# Or install and build manually
-npm install
-npm run build
-```
+4. **Extension Shows Estimated Data**:
+   - This means the real API is not accessible
+   - Check your API credentials in `env.js`
+   - Verify the proxy server is running and accessible
 
-5. Load the extension in Chrome:
-   - Open Chrome and go to `chrome://extensions/`
-   - Enable "Developer mode" (toggle in the top right)
-   - Click "Load unpacked" and select the `dist` directory from this project
+### Debug Mode
 
-## Usage
+Enable debug logging by opening Chrome DevTools:
 
-1. Click the X-Analyzer icon in your Chrome toolbar
-2. Enter a Twitter/X username or paste a profile URL
-3. Click "Analyze" to see detailed metrics
-4. View engagement statistics, audience insights, and content recommendations
-5. Use the History tab to access previous analyses
+1. Right-click the extension icon → "Inspect popup"
+2. Check the Console tab for detailed logs
+3. Look for API request/response information
 
-## Configuration Options
+## 📝 API Credentials Setup Guide
 
-### Twitter API Credentials
+### Detailed X API Setup
 
-For the full functionality, you'll need Twitter API credentials:
+1. **Create X Developer Account**:
+   - Visit [developer.twitter.com](https://developer.twitter.com)
+   - Apply for a developer account (may require approval)
+   - Describe your use case (profile analysis tool)
 
-1. Sign up for a Twitter Developer account at https://developer.twitter.com/
-2. Create a new project and app
-3. Generate API keys and tokens
-4. Add them to your `.env` file
+2. **Create a Project/App**:
+   - Once approved, create a new project
+   - Choose "Making a bot" or "Exploring the API" use case
+   - Name your app (e.g., "X Profile Analyzer")
 
-### Proxy Configuration
+3. **Generate Credentials**:
+   - Navigate to your app's "Keys and tokens" section
+   - Generate a **Bearer Token** (essential for API v2)
+   - Optionally generate API Key & Secret for additional features
 
-The extension includes support for using a proxy server to access the Twitter API:
+4. **Set Permissions**:
+   - Set app permissions to "Read" (sufficient for profile analysis)
+   - No need for write permissions unless adding post features
 
-```
-DO_PROXY_ENABLED=true
-DO_PROXY_HOST=your_proxy_host
-DO_PROXY_PORT=your_proxy_port
-DO_PROXY_USERNAME=your_proxy_username
-DO_PROXY_PASSWORD=your_proxy_password
-DO_PROXY_FALLBACK_DIRECT=true
-```
+### Security Best Practices
 
-- Set `DO_PROXY_ENABLED=false` to disable proxy usage
-- Set `DO_PROXY_FALLBACK_DIRECT=true` to allow fallback to direct connection if proxy fails
+- **Never share your API credentials**
+- **Use environment variables in production**
+- **Regularly rotate your tokens**
+- **Monitor your API usage in the X Developer Portal**
+- **Set up usage alerts to avoid unexpected charges**
 
-## Troubleshooting
+## 🤝 Contributing
 
-If you encounter any issues:
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature-name`
+3. Make your changes and test thoroughly
+4. Commit with clear messages: `git commit -m "Add feature description"`
+5. Push to your branch: `git push origin feature-name`
+6. Submit a pull request
 
-1. Check the console for error messages (right-click extension popup > Inspect > Console)
-2. Verify your API credentials and proxy settings
-3. Clear the extension's cache from the popup settings
-4. Refer to the [TROUBLESHOOTING.md](TROUBLESHOOTING.md) file for common issues and solutions
-
-## For Developers
-
-### Project Structure
-
-- `manifest.json` - Chrome extension manifest
-- `popup/` - UI for the extension popup
-- `scripts/` - Core functionality
-  - `auth-handler.js` - Authentication and token management
-  - `api-handler.js` - API request handling
-  - `proxy-config.js` - Proxy configuration
-  - `background.js` - Background service worker
-  - `directHandler.js` - UI event handling
-  - `utils/` - Utility functions and helpers
-    - `uiHelpers.js` - UI management utilities
-    - `domHelpers.js` - DOM manipulation utilities
-- `server/` - Proxy server implementation
-- `env.js` - Environment configuration
-
-### Building for Development
-
-For development with hot-reloading:
-
-```bash
-npm run dev
-```
-
-### Running Tests
-
-```bash
-npm test
-```
-
-## License
+## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## Acknowledgments
+## 🆘 Support
 
-- Built with Chrome Extension Manifest V3
-- Uses Twitter API v2
-- Proxy integration with DigitalOcean
+If you encounter issues:
+
+1. Check the [Troubleshooting](#-troubleshooting) section
+2. Review the browser console for error messages
+3. Ensure your X API credentials are valid and properly configured
+4. Create an issue on GitHub with detailed error information
+
+## 🔄 Updates
+
+The extension automatically checks for updates and will notify you when new versions are available. Always keep your API credentials secure when updating.
+
+---
+
+**Note**: This extension requires valid X API credentials to function properly. Without real API access, it will show estimated/fallback data only. The setup process is essential for getting accurate, real-time profile analytics.

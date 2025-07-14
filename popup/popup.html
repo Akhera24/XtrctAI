@@ -694,6 +694,16 @@
       font-weight: 600;
       text-align: center;
     }
+    
+    /* Rate limit status styling */
+    .rate-limit-status {
+      margin: 16px 0;
+      transition: all 0.3s ease;
+    }
+    
+    .rate-limit-status:empty {
+      display: none;
+    }
   </style>
 </head>
 <body>
@@ -754,6 +764,11 @@
         <div class="action-buttons">
           <button id="analyze-button" class="primary-button">Analyze</button>
           <button id="test-api-button" class="secondary-button" title="Test API connectivity">Test API</button>
+        </div>
+        
+        <!-- Rate Limit Status Display -->
+        <div id="rate-limit-status" class="rate-limit-status">
+          <!-- Rate limit status will be populated by JavaScript -->
         </div>
       </div>
       
