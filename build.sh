@@ -3,33 +3,48 @@
 # X-Analyzer Extension Build Script
 # Builds the extension and performs necessary post-build steps
 
-# Set up error handling
-set -e
+# Fail fast and loudly:
+#   -e  abort on any command failure
+#   -u  abort on undefined variables
+#   -o pipefail  a failure anywhere in a pipeline fails the whole pipeline
+# Without pipefail, piping webpack's output would mask a non-zero webpack exit.
+set -euo pipefail
 
 echo "🔧 Building X-Analyzer extension..."
 
-# Run webpack build
+# Run webpack build. `set -e` propagates a webpack failure as a non-zero exit,
+# so a broken bundle can never be reported as a successful build.
 npm run build
 
-# Ensure proxy service worker is available
-if [ -f "dist/proxy-service-worker.js" ]; then
-  echo "✅ Proxy service worker is available."
-else
-  echo "❌ Proxy service worker not found in dist! Copying manually..."
-  cp proxy-service-worker.js dist/
+# Guard against credentials ever being packaged into the shipped bundle.
+# The extension is distributed as a zip: anything in dist/ is public.
+echo "🔍 Checking that no credentials leaked into dist/..."
+if [ -f "dist/.env" ]; then
+  echo "❌ dist/.env exists — credentials must never be packaged into the extension."
+  exit 1
 fi
 
-# Ensure manifest is correctly set up
-echo "🔍 Verifying manifest.json..."
-if grep -q "proxy-service-worker.js" dist/manifest.json; then
-  echo "✅ Manifest references proxy-service-worker.js correctly."
-else
-  echo "⚠️ Warning: proxy-service-worker.js might not be referenced in manifest.json"
+if grep -rqE "AAAAAAAAAAAAAAAAAAAAA|xai-[A-Za-z0-9]{20}" dist/ 2>/dev/null; then
+  echo "❌ A bearer-token-shaped string was found in dist/. Refusing to report success."
+  exit 1
 fi
+echo "✅ No credentials found in dist/."
 
-# Check if the dist directory contains all necessary files
+# Check if the dist directory contains all necessary files.
+# These are exactly the paths manifest.json points at.
 echo "🔍 Checking for required files..."
-REQUIRED_FILES=("manifest.json" "background.js" "popup/popup.html" "icons/icon48.png" "proxy-service-worker.js")
+REQUIRED_FILES=(
+  "manifest.json"
+  "background.js"
+  "content.js"
+  "popup/popup.html"
+  "popup/popup.js"
+  "scripts/bridge.js"
+  "scripts/debugging.js"
+  "scripts/utils/uiHelpers.js"
+  "scripts/utils/domHelpers.js"
+  "icons/icon48.png"
+)
 MISSING_FILES=()
 
 for file in "${REQUIRED_FILES[@]}"; do
@@ -62,8 +77,18 @@ echo "2. Enable Developer mode (toggle in top right)"
 echo "3. Click 'Load unpacked'"
 echo "4. Select the 'dist' directory"
 echo ""
-echo "If you encounter 'message port closed' errors:"
-echo "- Check console logs for details"
-echo "- Verify your proxy credentials in .env"
-echo "- Make sure your API keys are valid"
-echo "================================================" 
+echo "The extension holds NO API credentials. All X API access goes through"
+echo "the proxy server, which is the only place credentials live."
+echo ""
+echo "By default the extension talks to http://localhost:3000."
+echo ""
+echo "To point it at a deployed proxy you must edit manifest.json first — add the"
+echo "origin to BOTH host_permissions and the CSP connect-src. Setting proxyUrl"
+echo "alone is not enough; the CSP will block the request. Then:"
+echo "  chrome.storage.local.set({ proxyUrl: 'https://your-proxy.example.com' })"
+echo ""
+echo "If analysis fails with 'Proxy server unreachable':"
+echo "- Make sure the proxy from server/ is running"
+echo "- Check the proxy's credentials are configured (server-side .env)"
+echo "- Confirm the proxy host is allowed by manifest.json host_permissions"
+echo "================================================"

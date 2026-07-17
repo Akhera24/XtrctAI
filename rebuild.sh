@@ -1,6 +1,10 @@
 #!/bin/bash
 
 # X-Analyzer Extension Rebuild Script
+
+# Fail fast: a copy that silently fails must not report a successful build.
+set -euo pipefail
+
 echo "🔄 Rebuilding X-Analyzer extension..."
 
 # Create dist directory if it doesn't exist
@@ -15,7 +19,9 @@ cp -r icons dist/
 cp -r styles dist/
 cp -r popup dist/
 cp manifest.json dist/
-cp .env dist/
+# NOTE: .env is deliberately NOT copied into dist/. The extension bundle is
+# distributed to users and cannot hold secrets — credentials belong to the proxy
+# server only. Copying .env here would ship them to every user who installs it.
 
 # Add a fallback logo (if missing)
 if [ ! -f "dist/icons/logo.png" ]; then

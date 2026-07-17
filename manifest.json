@@ -1,80 +1,70 @@
 {
-    "manifest_version": 3,
-    "name": "X Profile Analyzer",
-    "version": "1.0.4",
-    "description": "Analyze X (Twitter) profiles and generate engaging posts with AI insights",
-    "icons": {
+  "manifest_version": 3,
+  "name": "XtrctAI — X Profile Analyzer",
+  "version": "2.0.0",
+  "description": "Analyze X (Twitter) profiles: follower ratios, engagement rate, and an influence score.",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
     },
-    "action": {
-      "default_popup": "popup/popup.html",
-      "default_icon": {
-        "16": "icons/icon16.png",
-        "48": "icons/icon48.png",
-        "128": "icons/icon128.png"
-      },
-      "default_title": "X Profile Analyzer"
-    },
-    "permissions": [
-      "storage",
-      "tabs",
-      "activeTab",
-      "scripting",
-      "contextMenus"
-    ],
-    "host_permissions": [
-      "https://*.twitter.com/*",
-      "https://*.x.com/*",
-      "https://api.twitter.com/*",
-      "https://api.x.com/*",
-      "https://143.198.111.238:3000/*",
-      "https://143.198.111.238:*/*",
-      "http://143.198.111.238:3000/*",
-      "http://143.198.111.238:*/*",
-      "http://localhost:3000/*",
-      "https://*.herokuapp.com/*",
-      "http://*.herokuapp.com/*",
-      "https://x-analyzer-backup.herokuapp.com/*",
-      "https://x-analyzer-proxy.herokuapp.com/*"
-    ],
-    "background": {
-      "service_worker": "background.js"
-    },
-    "content_scripts": [
-      {
-        "matches": [
-          "https://*.twitter.com/*",
-          "https://*.x.com/*"
-        ],
-        "js": [
-          "scripts/bridge.js",
-          "scripts/debugging.js",
-          "scripts/utils/uiHelpers.js",
-          "scripts/utils/domHelpers.js",
-          "content.js"
-        ],
-        "css": [
-          "styles/content.css"
-        ],
-        "run_at": "document_end"
-      }
-    ],
-    "web_accessible_resources": [
-      {
-        "resources": [
-          "icons/*",
-          "styles/*",
-          "scripts/*",
-          "popup/*"
-        ],
-        "matches": ["<all_urls>"]
-      }
-    ],
-    "content_security_policy": {
-      "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://*.twitter.com https://api.twitter.com https://*.x.com https://api.x.com https://143.198.111.238:3000 https://143.198.111.238:* http://143.198.111.238:3000 http://143.198.111.238:* http://localhost:3000 ws://localhost:3000 wss://143.198.111.238:3000 https://*.herokuapp.com http://*.herokuapp.com https://x-analyzer-backup.herokuapp.com https://x-analyzer-proxy.herokuapp.com;"
-    },
-    "offline_enabled": false,
-    "minimum_chrome_version": "88"
-  }
+    "default_title": "XtrctAI"
+  },
+  "permissions": [
+    "storage",
+    "contextMenus"
+  ],
+  "host_permissions": [
+    "http://localhost:3000/*"
+  ],
+  "optional_host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.twitter.com/*",
+        "https://*.x.com/*"
+      ],
+      "js": [
+        "scripts/bridge.js",
+        "scripts/debugging.js",
+        "scripts/utils/uiHelpers.js",
+        "scripts/utils/domHelpers.js",
+        "content.js"
+      ],
+      "css": [
+        "styles/content.css"
+      ],
+      "run_at": "document_end"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "icons/*",
+        "styles/content.css"
+      ],
+      "matches": [
+        "https://*.twitter.com/*",
+        "https://*.x.com/*"
+      ]
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' http://localhost:3000"
+  },
+  "offline_enabled": false,
+  "minimum_chrome_version": "88"
+}

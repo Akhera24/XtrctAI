@@ -1,25 +1,21 @@
 {
-    "name": "x-analyzer",
-    "version": "1.0.1",
-    "description": "X Profile Analyzer Chrome Extension",
+    "name": "xtrctai",
+    "version": "2.0.0",
+    "description": "Chrome extension for X (Twitter) profile analytics, backed by a fault-tolerant Node/Express proxy.",
     "private": true,
     "scripts": {
-        "build": "webpack --config webpack.config.js && node copy-env.js",
+        "build": "webpack --config webpack.config.js",
         "dev": "webpack --config webpack.config.js --watch",
-        "test": "echo \"No tests configured\"",
+        "test": "npm --prefix server test",
+        "bench": "npm --prefix server run bench",
         "generate-icons": "node generate-icons.js"
-    },
-    "dependencies": {
-        "dotenv": "^16.3.1",
-        "node-fetch": "^3.3.2",
-        "sharp": "^0.33.2"
     },
     "devDependencies": {
         "@babel/core": "^7.26.10",
         "@babel/preset-env": "^7.26.9",
         "babel-loader": "^10.0.0",
         "copy-webpack-plugin": "^13.0.0",
-        "dotenv-webpack": "^8.1.0",
+        "sharp": "^0.33.2",
         "webpack": "^5.98.0",
         "webpack-cli": "^6.0.1"
     },
