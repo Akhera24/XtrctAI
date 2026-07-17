@@ -1,143 +1,41 @@
-# Environment Variables
-.env
-.env.local
-.env.*.local
-.env.development
-.env.test
-.env.production
-
 # Dependencies
-/node_modules
-/.pnp
-.pnp.js
+node_modules/
 
-# Testing
-/coverage
-__tests__/
-*.spec.js
-*.test.js
+# Build output
+dist/
+build/
 
-# Production
-/build
-/dist
-/out
+# Credentials live in server/.env only — copy server/.env.example to start.
+# The extension holds none by design, so there is no client-side env file.
+# env.js is listed purely to catch a resurrected copy of the old leaked config.
+env.js
+.env
+.env.*
+!.env.example
 
-# Debug logs
+# Logs
+*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-debug.log
 
-# IDE and Editor folders
+# Editors / OS
+.DS_Store
 .idea/
 .vscode/
 *.swp
-*.swo
-.DS_Store
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-*.sublime-*
-.settings/
 
-# Optional npm cache directory
-.npm
+# Test + coverage output
+coverage/
+.nyc_output/
+bench/results/
 
-# Optional eslint cache
-.eslintcache
-
-# Optional REPL history
-.node_repl_history
-
-# Output of 'npm pack'
-*.tgz
-
-# Yarn Integrity file
-.yarn-integrity
-.yarn/
-.yarnrc
-
-# Chrome Extension specific
+# Chrome extension packaging artifacts
 *.pem
 *.crx
 web-ext-artifacts/
-manifest.*.json
-!manifest.json
-/releases/
 
-# Browser Extension Development
-.web-extension-id
-web-ext-artifacts/
-.chrome/
-.firefox/
-
-# Temporary files
-*.log
-*.tmp
-*~
-.cache/
-.temp/
-
-# API Keys and Secrets
-**/config/keys.js
-**/config/secrets.js
-**/credentials.json
-**/token.json
-
-# Additional security measures for sharing
-**/*.key
-**/*.pem
-**/*private*
-**/*secret*
-**/*password*
-**/*credential*
-.git
-.github
-.gitlab
-.env*
-**/*.env
-**/*config*.json
-**/auth*
-**/token*
-
-# Test coverage reports
-.nyc_output/
-coverage/
-junit.xml
-test-results/
-
-# Component Documentation
-storybook-static/
-docs/
-
-# Development tools
-.husky/
-.prettierignore
-.eslintignore
-
-# Backup and temporary files
-*.backup
-*.old
+# Backup files — these are how credentials leaked the first time.
 *.bak
-*.backup2
-*.broken
-*-backup.js
-popup/popup-original.js.backup
-popup/popup.js.backup
-popup/popup.js.backup2
-popup/popup.js.broken
-popup/popup.js.old
-popup/popup-backup.js
-
-# Temporary fix scripts
-fix-*.sh
-fix-*.js
-*-fix.js
-emergency-fix.js
-popup-auto-fix.js
-
-# Node modules and build artifacts
-node_modules/
-dist/
-.DS_Store
+*.old
+*.backup
