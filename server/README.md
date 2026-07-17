@@ -1,139 +1,78 @@
-# X API Proxy Server
+# XtrctAI proxy
 
-A secure server-side proxy for handling X (Twitter) API requests to avoid CORS issues and protect API credentials.
+Fault-tolerant proxy for X API v2. Sits between the Chrome extension and X, and is the only component that holds credentials.
 
-## Why a Proxy Server?
+Full architecture, design rationale, and benchmark numbers are in the [root README](../README.md). This file is the operational reference.
 
-This proxy server solves several common issues when working with the X API:
-
-1. **CORS Issues**: The X API doesn't allow direct requests from browser extensions or web applications, resulting in CORS errors.
-2. **API Key Security**: It keeps your API keys secure by storing them on the server, not exposing them in client-side code.
-3. **Rate Limiting**: Provides centralized rate limiting management across multiple users.
-4. **Error Handling**: Standardizes error responses and provides better error details.
-
-## Setup Instructions
-
-### Prerequisites
-
-- Node.js 18+ and npm
-- X API credentials (Bearer Token, API Key, API Key Secret)
-
-### Installation
-
-1. Clone this repository
-2. Navigate to the server directory
+## Run
 
 ```bash
-cd server
-```
-
-3. Install dependencies
-
-```bash
+cp .env.example .env     # add X_BEARER_TOKEN
 npm install
+npm start                # :3000
 ```
 
-4. Create an environment file
+Redis is optional — without it, the proxy degrades to an in-process cache and a per-instance rate limiter, and says so in `/health`.
 
 ```bash
-cp .env.example .env
+npm test                 # 31 tests, no network needed
+npm run bench            # autocannon load harness
+npm run bench -- --scenario=cold --connections=100
 ```
 
-5. Edit the `.env` file and add your X API credentials:
+## API
 
-```bash
-TWITTER_API_BEARER_TOKEN=your_bearer_token_here
-TWITTER_API_KEY=your_api_key_here
-TWITTER_API_KEY_SECRET=your_api_key_secret_here
+### `POST /api/proxy`
+
+```json
+{ "endpoint": "users/by/username/jack", "params": { "user.fields": "public_metrics" } }
 ```
 
-### Running Locally
-
-Start the development server:
-
-```bash
-npm run dev
-```
-
-The server will be available at http://localhost:3000
-
-### Deployment
-
-This server can be deployed to any Node.js hosting service like Heroku, Vercel, or Railway.
-
-#### Deploying to Heroku
-
-1. Install Heroku CLI and login
-2. From the server directory:
-
-```bash
-heroku create x-analyzer-proxy
-git init
-heroku git:remote -a x-analyzer-proxy
-git add .
-git commit -m "Initial commit"
-git push heroku main
-```
-
-3. Set environment variables:
-
-```bash
-heroku config:set TWITTER_API_BEARER_TOKEN=your_bearer_token_here
-heroku config:set TWITTER_API_KEY=your_api_key_here
-heroku config:set TWITTER_API_KEY_SECRET=your_api_key_secret_here
-heroku config:set NODE_ENV=production
-```
-
-## API Endpoints
-
-### Health Check
-
-```
-GET /health
-```
-
-Returns the server status and timestamp.
-
-### Proxy API Requests
-
-```
-POST /api/proxy
-```
-
-Body:
 ```json
 {
-  "endpoint": "users/by/username/example",
-  "method": "GET",
-  "params": {
-    "user.fields": "description,public_metrics"
-  }
+  "data": { "...": "verbatim X API response body" },
+  "meta": { "source": "x-api-v2:live", "degraded": false }
 }
 ```
 
-## Testing
+`meta.source` is always one of:
 
-To test the proxy server:
+| Value | Meaning |
+|---|---|
+| `x-api-v2:live` | Fetched from X just now |
+| `cache:local` / `cache:redis` | Fresh cache hit, no token spent |
+| `cache:stale` | **Degraded.** X was unreachable; this data is expired but real. `meta.degraded` is `true` and `X-Data-Source: stale-cache` is set. |
 
-1. Start the server
-2. Send a request to the health endpoint:
+Only read-only endpoints on an allowlist are forwarded (`server/src/app.js`). The proxy is not a general-purpose relay — a compromised client shouldn't be able to act as your app against X.
 
+Errors:
+
+| Status | Code | Meaning |
+|---|---|---|
+| 400 | — | Missing/invalid `endpoint` |
+| 403 | — | Endpoint not on the allowlist |
+| 429 | `RATE_LIMITED` | Token bucket exhausted. `Retry-After` is accurate. |
+| 502 | `CIRCUIT_OPEN` | Breaker open — X is failing, request not attempted |
+| 503 | `QUEUE_FULL` | Shedding load rather than growing an unbounded queue |
+
+### `GET /health`
+
+`200` normally; **`503` when the circuit breaker is OPEN**, so a load balancer routes away instead of seeing "ok" while every request degrades to stale.
+
+```json
+{
+  "status": "ok",
+  "redis": "connected",
+  "breaker": { "state": "CLOSED", "trips": 0 },
+  "cache": { "hitRate": 0.94, "staleServed": 0 },
+  "queue": { "active": 2, "waiting": 0, "coalesced": 41 },
+  "rateLimit": { "tokensAvailable": 287, "capacity": 300 }
+}
 ```
-curl http://localhost:3000/health
-```
 
-3. Test the proxy with a simple X API call:
+## Deploy notes
 
-```
-curl -X POST http://localhost:3000/api/proxy \
-  -H "Content-Type: application/json" \
-  -d '{"endpoint": "tweets/1460323737035677698"}'
-```
-
-## Configuration
-
-You can modify the server's behavior by changing environment variables in the `.env` file:
-
-- `PORT`: Server port (default: 3000)
-- `NODE_ENV`: Environment (`development` or `production`)
-- `ALLOWED_ORIGINS`: Comma-separated list of allowed origins for CORS 
+- Set `CORS_ORIGIN` to your extension ID. Leaving it `*` lets any page call your proxy on your token.
+- Terminate TLS in front of this. It speaks plain HTTP.
+- `SIGTERM` drains in-flight requests (10s cap) before exit, so deploys don't 502 live traffic.
+- Run behind a process manager. One instance per Redis is fine; the bucket is shared across instances by design.
