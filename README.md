@@ -1,257 +1,168 @@
-# ExtrctAI
-A social media app where you create posts see how much engagement or quality of the posts and have a centralized home feed with vids from different platforms with customizability for how you want your home feed to look. Also, you can highlight the best vids on your home feed for the app to recommend and to use when generating your own posts.
+# XtrctAI
 
-# X Profile Analyzer Chrome Extension
+A Chrome extension that analyzes X (Twitter) profiles — follower ratios, engagement rates, an influence score — backed by a Node proxy that does the unglamorous work of staying inside X's rate limits without falling over.
 
-A powerful Chrome extension for analyzing X (Twitter) profiles with real-time data and AI-powered insights.
-
-## 🚀 Features
-
-- **Real-time Profile Analysis**: Fetch live data directly from X API
-- **Comprehensive Metrics**: Followers, engagement rates, posting patterns, and more
-- **Growth Recommendations**: AI-powered suggestions for improving your X presence
-- **Content Strategy**: Personalized recommendations based on your content themes
-- **Historical Tracking**: Save and compare profile analyses over time
-- **Professional UI**: Clean, modern interface with smooth animations
-
-## 🔧 Setup Instructions
-
-### Prerequisites
-
-1. **X Developer Account**: You need access to the X API
-2. **Chrome Browser**: Version 88 or higher
-3. **Internet Connection**: For API calls and proxy server communication
-
-### Step 1: Get X API Credentials
-
-1. **Apply for X API Access**:
-   - Go to [X Developer Portal](https://developer.twitter.com/en/portal/dashboard)
-   - Sign up for a developer account if you don't have one
-   - Create a new project/app or use an existing one
-
-2. **Get Your Bearer Token**:
-   - In your X Developer Portal dashboard
-   - Navigate to your project → App → "Keys and tokens"
-   - Generate a **Bearer Token** (this is the most important credential)
-   - Copy and save it securely
-
-3. **Optional - Get Additional Credentials**:
-   - **API Key** (Consumer Key)
-   - **API Key Secret** (Consumer Secret)
-   - **Client ID** and **Client Secret** (for OAuth 2.0)
-   - **Access Token** and **Access Token Secret** (for user context)
-
-### Step 2: Configure the Extension
-
-1. **Update API Credentials**:
-   ```javascript
-   // In env.js file, replace the empty strings with your real credentials:
-   const DEFAULT_CONFIG = {
-     twitter: {
-       config1: {
-         bearerToken: 'YOUR_REAL_BEARER_TOKEN_HERE', // Required
-         xApiKey: 'YOUR_API_KEY_HERE', // Optional but recommended
-         clientId: 'YOUR_CLIENT_ID_HERE', // Optional
-         clientSecret: 'YOUR_CLIENT_SECRET_HERE', // Optional
-         // ... other fields
-       }
-     }
-   };
-   ```
-
-2. **Important Security Notes**:
-   - Never commit real API keys to public repositories
-   - Consider using environment variables for production
-   - The extension uses a proxy server to avoid CORS issues
-
-### Step 3: Install the Extension
-
-1. **Load in Chrome**:
-   ```bash
-   # Clone the repository
-   git clone https://github.com/your-username/x-analyzer.git
-   cd x-analyzer
-   
-   # Open Chrome and go to chrome://extensions/
-   # Enable "Developer mode"
-   # Click "Load unpacked" and select the project folder
-   ```
-
-2. **Verify Installation**:
-   - Look for the X Profile Analyzer icon in your Chrome toolbar
-   - Click the icon to open the popup
-   - Check the console for any configuration warnings
-
-### Step 4: Test the Setup
-
-1. **Basic Connection Test**:
-   - Open the extension popup
-   - Go to the "Analyze" tab
-   - Try analyzing a public X profile (e.g., @elonmusk)
-
-2. **Check for Real Data**:
-   - Successfully analyzed profiles should show "✅ Analysis completed using real X API data"
-   - If you see "⚠️ Some data may be estimated due to API limitations", check your API credentials
-
-## 📊 Understanding API Rate Limits
-
-The X API has rate limits to prevent abuse:
-
-- **Bearer Token**: 300 requests per 15-minute window (per app)
-- **User Context**: Additional limits for user-specific data
-
-The extension automatically:
-- Tracks your rate limit usage
-- Switches between multiple configurations if available
-- Shows warnings when approaching limits
-- Provides fallback data when limits are exceeded
-
-## 🔧 Architecture Overview
-
-```
-┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│   Extension     │───▶│   Proxy Server   │───▶│    X API        │
-│   (Frontend)    │    │   (CORS Handler) │    │   (Real Data)   │
-└─────────────────┘    └──────────────────┘    └─────────────────┘
-```
-
-### Why Use a Proxy Server?
-
-1. **CORS Prevention**: Direct browser-to-X API calls are blocked by CORS policy
-2. **Credential Security**: API keys are not exposed in the browser
-3. **Rate Limit Management**: Centralized tracking and optimization
-4. **Caching**: Reduce redundant API calls
-
-## 🛠 Development
-
-### Local Development
-
-1. **Install Dependencies**:
-   ```bash
-   npm install
-   ```
-
-2. **Start Development Server** (for proxy):
-   ```bash
-   cd server
-   npm install
-   npm start
-   ```
-
-3. **Build Extension**:
-   ```bash
-   npm run build
-   ```
-
-### Environment Variables
-
-Create a `.env` file in the server directory:
-
-```env
-# Required
-TWITTER_API_BEARER_TOKEN=your_bearer_token_here
-
-# Optional
-TWITTER_API_KEY=your_api_key_here
-TWITTER_API_SECRET=your_api_secret_here
-PORT=3000
-
-# Proxy settings (if using external proxy)
-PROXY_HOST=your.proxy.host
-PROXY_PORT=3000
-PROXY_USERNAME=your_username
-PROXY_PASSWORD=your_password
-```
-
-## 🐛 Troubleshooting
-
-### Common Issues
-
-1. **"API connection failed" Error**:
-   - Check your Bearer Token is valid and correctly formatted
-   - Ensure the proxy server is running (if using local setup)
-   - Verify your X Developer account has API access
-
-2. **"Rate limit exceeded" Warning**:
-   - Wait for the rate limit window to reset (15 minutes)
-   - Add a secondary API configuration for redundancy
-   - Consider upgrading your X API plan for higher limits
-
-3. **"User not found" Error**:
-   - Verify the username is correct and the profile is public
-   - Some profiles may be private or suspended
-   - Check if the user has blocked API access
-
-4. **Extension Shows Estimated Data**:
-   - This means the real API is not accessible
-   - Check your API credentials in `env.js`
-   - Verify the proxy server is running and accessible
-
-### Debug Mode
-
-Enable debug logging by opening Chrome DevTools:
-
-1. Right-click the extension icon → "Inspect popup"
-2. Check the Console tab for detailed logs
-3. Look for API request/response information
-
-## 📝 API Credentials Setup Guide
-
-### Detailed X API Setup
-
-1. **Create X Developer Account**:
-   - Visit [developer.twitter.com](https://developer.twitter.com)
-   - Apply for a developer account (may require approval)
-   - Describe your use case (profile analysis tool)
-
-2. **Create a Project/App**:
-   - Once approved, create a new project
-   - Choose "Making a bot" or "Exploring the API" use case
-   - Name your app (e.g., "X Profile Analyzer")
-
-3. **Generate Credentials**:
-   - Navigate to your app's "Keys and tokens" section
-   - Generate a **Bearer Token** (essential for API v2)
-   - Optionally generate API Key & Secret for additional features
-
-4. **Set Permissions**:
-   - Set app permissions to "Read" (sufficient for profile analysis)
-   - No need for write permissions unless adding post features
-
-### Security Best Practices
-
-- **Never share your API credentials**
-- **Use environment variables in production**
-- **Regularly rotate your tokens**
-- **Monitor your API usage in the X Developer Portal**
-- **Set up usage alerts to avoid unexpected charges**
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature-name`
-3. Make your changes and test thoroughly
-4. Commit with clear messages: `git commit -m "Add feature description"`
-5. Push to your branch: `git push origin feature-name`
-6. Submit a pull request
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🆘 Support
-
-If you encounter issues:
-
-1. Check the [Troubleshooting](#-troubleshooting) section
-2. Review the browser console for error messages
-3. Ensure your X API credentials are valid and properly configured
-4. Create an issue on GitHub with detailed error information
-
-## 🔄 Updates
-
-The extension automatically checks for updates and will notify you when new versions are available. Always keep your API credentials secure when updating.
+The extension is the demo. The proxy is the actual engineering.
 
 ---
 
-**Note**: This extension requires valid X API credentials to function properly. Without real API access, it will show estimated/fallback data only. The setup process is essential for getting accurate, real-time profile analytics.
+## The problem this solves
+
+X's API v2 gives you **300 requests per 15 minutes** on an app-level bearer token. That's one request every three seconds, shared across every user of your app. Blow through it and you get 429s for the rest of the window.
+
+That constraint drives every design decision here:
+
+- **A browser extension can't hold the credentials.** Anything shipped in the bundle can be extracted by anyone who installs it and unzips the `.crx`. So the extension holds *no* X credentials at all — it talks only to the proxy, and the proxy is the trust boundary. This isn't a nice-to-have; it's the only arrangement where the token isn't public.
+- **A fixed-window counter isn't good enough.** The naive approach (count requests, reset every 15 minutes) permits 600 requests across a window boundary — 300 at 14:59:59, 300 at 15:00:01. That's the exact burst pattern that gets an app throttled. This uses a token bucket instead.
+- **The 300/15min budget is a hard ceiling on *new* profiles.** No amount of engineering makes it 301. What engineering *can* do is make sure repeat reads never spend a token, and that the budget is never wasted on duplicate or doomed requests. That's what most of the proxy is.
+
+## How it works
+
+```
+Extension popup
+      │  POST /api/proxy { endpoint, params }     ← no credentials, ever
+      ▼
+┌─────────────────────────────────────────────┐
+│  Proxy (Node/Express)                       │
+│                                             │
+│   cache ──── fresh? ────────────────► return│
+│     │ miss                                  │
+│     ▼                                       │
+│   queue ──── identical request in flight?   │
+│     │        join it, don't duplicate       │
+│     ▼                                       │
+│   token bucket ── budget left? ── no ─►429  │
+│     │ yes                                   │
+│     ▼                                       │
+│   circuit breaker ── upstream dead? ─► fail │
+│     │ closed                          fast  │
+│     ▼                                       │
+│   retry w/ exponential backoff + jitter     │
+└─────┬───────────────────────────────────────┘
+      ▼
+   X API v2  ──► reconcile bucket against x-rate-limit headers
+```
+
+Every layer below the cache falls back to **stale-if-available**, clearly labeled as stale. The one thing the proxy never does is invent a number: every response says where its data came from via `meta.source` and `meta.degraded`.
+
+### The pieces worth reading
+
+| File | What's interesting about it |
+|---|---|
+| [`server/src/tokenBucket.js`](server/src/tokenBucket.js) | Refill-and-take as a **Lua script**, so it's atomic inside Redis. Doing it as GET/compute/SET in Node races under concurrency and over-admits — precisely under the load it exists to survive. Falls back to an in-process bucket if Redis dies. |
+| [`server/src/circuitBreaker.js`](server/src/circuitBreaker.js) | CLOSED → OPEN → HALF_OPEN, admitting exactly one probe on recovery. Deliberately does *not* count 4xx as upstream failure — a 404 for a handle that doesn't exist means X is healthy and answering. |
+| [`server/src/queue.js`](server/src/queue.js) | Single-flight coalescing. 500 concurrent requests for `@jack` become **one** upstream call whose result fans out to all 500 waiters. Highest-leverage thing in the request path, by a wide margin. |
+| [`server/src/cache.js`](server/src/cache.js) | Redis in front of a bounded in-process LRU. Entries carry their own `expiresAt` so an expired entry is still *readable* — that's what makes stale-while-error possible. |
+| [`server/src/backoff.js`](server/src/backoff.js) | Full jitter. Without it, N requests that fail together retry together and the retry storm recreates the outage. |
+
+## Measured behavior
+
+Numbers from `npm run bench` (autocannon, Apple M-series, local Redis, **stubbed upstream at a fixed 80ms**). Reproduce with `cd server && npm run bench`.
+
+**Warm path** — repeat reads of the same profile, 500 concurrent connections, 10s:
+
+| | |
+|---|---|
+| Throughput | **9,851 req/sec** |
+| Latency p50 | **43 ms** |
+| Latency p95¹ | **65 ms** |
+| Success rate | 100% (0 non-2xx, 0 errors) |
+| 98,499 client requests → | **1 upstream call** |
+
+**Cold path** — every request a unique profile, so nothing caches or coalesces:
+
+61,676 requests flooded in. **Exactly 303 reached X**: 300 tokens of capacity, plus ~3 refilled during the 10-second run at 0.333/sec. The remaining 61,373 got a 429 with an accurate `Retry-After`. That's the whole point — under a 61k-request flood, the bucket spent exactly the budget and not one token more.
+
+**Read those two numbers together, because either one alone is misleading:**
+
+- The 9,851/sec figure is **proxy overhead on cached reads with a stubbed upstream**. It is not "9,851 profiles analyzed per second from X," and it never could be.
+- Sustained analysis of *new* profiles is capped at **300 per 15 minutes — 0.33/sec** — by X's budget. That's a property of X's pricing, not of this code. The engineering makes the ceiling *reachable and graceful*, not higher.
+
+¹ autocannon reports a p97.5 bucket, not a true p95. Labeled honestly rather than rounded into the more flattering name.
+
+## Running it
+
+Requires Node ≥ 20, Redis, and Chrome ≥ 88.
+
+```bash
+git clone https://github.com/Akhera24/XtrctAI.git
+cd XtrctAI
+```
+
+**1. Start the proxy.** It needs an X API bearer token — get one from the [X Developer Portal](https://developer.x.com/en/portal/dashboard) (your app must be attached to a Project, or v2 returns 403 `client-not-enrolled`).
+
+```bash
+cd server
+cp .env.example .env        # then add your X_BEARER_TOKEN
+npm install
+redis-server &              # optional — the proxy degrades to in-process cache without it
+npm start
+```
+
+**2. Build and load the extension.**
+
+```bash
+cd ..
+npm install
+npm run build             # → dist/
+```
+
+`chrome://extensions` → enable Developer mode → *Load unpacked* → select **`dist/`**.
+
+The extension talks to `http://localhost:3000` by default.
+
+**Pointing it at a deployed proxy takes a manifest edit, not just a setting.** `background.js` reads `proxyUrl` from `chrome.storage.local`, but two things in `manifest.json` are deliberately scoped to localhost and will block anything else:
+
+```jsonc
+"host_permissions": ["http://localhost:3000/*"],
+"content_security_policy": {
+  "extension_pages": "... connect-src 'self' http://localhost:3000"
+}
+```
+
+Add your proxy's origin to **both** before deploying. This is scoped tight on purpose — the previous manifest requested `https://*.herokuapp.com/*`, a wildcard over every app on Heroku, which is the kind of permission that gets an extension rejected from the Web Store and deserves to be.
+
+### Tests
+
+```bash
+cd server && npm test       # 31 tests, no network required — upstream is stubbed
+```
+
+They're mostly unhappy-path: Redis unreachable, upstream returning 500s, the breaker mid-recovery, 200 concurrent takes against a 50-token bucket, a clock stepping backwards. The happy path was never the risk.
+
+## Project layout
+
+```
+manifest.json          MV3 manifest — 2 permissions (storage, contextMenus)
+background.js          service worker — talks to the proxy, holds no credentials
+content.js             overlay injected on x.com
+popup/                 extension UI
+scripts/               content-script helpers, icon/DOM utilities
+webpack.config.js      bundles the above into dist/. No .env injection, on purpose.
+server/
+  proxy.js             entry point: wires real deps, listens
+  src/
+    app.js             Express app factory (exported for tests)
+    xClient.js         composes cache → queue → bucket → breaker → backoff
+    tokenBucket.js     Redis + Lua, atomic
+    circuitBreaker.js  CLOSED/OPEN/HALF_OPEN
+    cache.js           Redis + in-process LRU, stale-while-error
+    queue.js           single-flight coalescing, bounded depth
+    backoff.js         exponential backoff, full jitter
+  test/                31 tests
+  bench/load.js        autocannon harness
+```
+
+## Known limitations
+
+Being specific here because a README that only lists strengths isn't informative:
+
+- **Grok AI isn't wired in.** `scripts/grokService.js` can make the calls, but nothing in the shipping path loads it, and the post generator returns simulated responses. It's scaffolding, not a feature.
+- **No follower growth over time.** The extension reads one snapshot per analysis and never persists a time series, so "growth" is not computable as built. Metrics are point-in-time.
+- **The analytics are rule-based, not learned.** The influence score is a hand-tuned weighted rubric (log-scaled followers, follower ratio, engagement rate). It's defensible arithmetic, not a model.
+- **Benchmarks stub the upstream.** They measure this proxy's overhead. Real end-to-end latency is dominated by X's round trip, which no amount of local optimization touches.
+- **The extension's own code is the weakest part of this repo.** It grew organically and shows it. The proxy is where the design work went.
+
+## License
+
+MIT
