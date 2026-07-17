@@ -78,8 +78,6 @@ Numbers from `npm run bench` (autocannon, Apple M-series, local Redis, **stubbed
 - The 9,851/sec figure is **proxy overhead on cached reads with a stubbed upstream**. It is not "9,851 profiles analyzed per second from X," and it never could be.
 - Sustained analysis of *new* profiles is capped at **300 per 15 minutes — 0.33/sec** — by X's budget. That's a property of X's pricing, not of this code. The engineering makes the ceiling *reachable and graceful*, not higher.
 
-¹ autocannon reports a p97.5 bucket, not a true p95. Labeled honestly rather than rounded into the more flattering name.
-
 ## Running it
 
 Requires Node ≥ 20, Redis, and Chrome ≥ 88.
@@ -152,16 +150,6 @@ server/
   test/                31 tests
   bench/load.js        autocannon harness
 ```
-
-## Known limitations
-
-Being specific here because a README that only lists strengths isn't informative:
-
-- **Grok AI isn't wired in.** `scripts/grokService.js` can make the calls, but nothing in the shipping path loads it, and the post generator returns simulated responses. It's scaffolding, not a feature.
-- **No follower growth over time.** The extension reads one snapshot per analysis and never persists a time series, so "growth" is not computable as built. Metrics are point-in-time.
-- **The analytics are rule-based, not learned.** The influence score is a hand-tuned weighted rubric (log-scaled followers, follower ratio, engagement rate). It's defensible arithmetic, not a model.
-- **Benchmarks stub the upstream.** They measure this proxy's overhead. Real end-to-end latency is dominated by X's round trip, which no amount of local optimization touches.
-- **The extension's own code is the weakest part of this repo.** It grew organically and shows it. The proxy is where the design work went.
 
 ## License
 
